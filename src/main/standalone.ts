@@ -31,7 +31,8 @@ export interface StandaloneServerOptions {
 export const createStandaloneServer = async (
   options: StandaloneServerOptions = {},
 ): Promise<StandaloneServer> => {
-  const app = Fastify({ logger: true });
+  const enableHttpLogs = process.env.CODEX_DEVTOOLS_HTTP_LOGS === '1';
+  const app = Fastify({ logger: enableHttpLogs });
   const serviceContext = new CodexServiceContext({
     sessionsPath: options.sessionsPath ?? process.env.CODEX_SESSIONS_PATH,
     configPath: options.configPath,

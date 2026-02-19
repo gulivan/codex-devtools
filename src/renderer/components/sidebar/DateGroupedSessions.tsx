@@ -50,6 +50,7 @@ export const DateGroupedSessions = (): JSX.Element => {
   const {
     sessions,
     sessionsLoading,
+    activeProjectCwd,
     activeSessionId,
     sessionPreviews,
     sessionUpdateBadges,
@@ -58,6 +59,7 @@ export const DateGroupedSessions = (): JSX.Element => {
   } = useAppStore((state) => ({
     sessions: state.sessions,
     sessionsLoading: state.sessionsLoading,
+    activeProjectCwd: state.activeProjectCwd,
     activeSessionId: state.activeSessionId,
     sessionPreviews: state.sessionPreviews,
     sessionUpdateBadges: state.sessionUpdateBadges,
@@ -86,7 +88,11 @@ export const DateGroupedSessions = (): JSX.Element => {
   }
 
   if (groups.length === 0) {
-    return <div className="sidebar-empty">No sessions found for this project.</div>;
+    return (
+      <div className="sidebar-empty">
+        {activeProjectCwd ? 'No sessions found for this project.' : 'Select a project to load sessions.'}
+      </div>
+    );
   }
 
   return (

@@ -79,6 +79,12 @@ export const Sidebar = (): JSX.Element => {
         />
       </div>
 
+      {!projectsLoading && projects.length === 0 ? (
+        <div className="sidebar-empty">
+          No projects discovered. Set <code>CODEX_SESSIONS_PATH</code> and restart.
+        </div>
+      ) : null}
+
       <DateGroupedSessions />
     </aside>
   );
