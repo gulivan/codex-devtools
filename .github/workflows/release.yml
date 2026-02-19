@@ -20,9 +20,10 @@ jobs:
             dist_command: pnpm dist:mac:arm64
             artifact_name: release-mac-arm64
           - arch: x64
-            runner: macos-13
+            runner: macos-15-intel
             dist_command: pnpm dist:mac:x64
             artifact_name: release-mac-x64
+    continue-on-error: ${{ matrix.arch == 'x64' }}
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -45,6 +46,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate semantic version tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]]; then
+            echo "Tag '$TAG' is not valid SemVer (expected vMAJOR.MINOR.PATCH[-PRERELEASE][+BUILD])."
+            exit 1
+          fi
 
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -96,6 +106,16 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate semantic version tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]]; then
+            echo "Tag '$TAG' is not valid SemVer (expected vMAJOR.MINOR.PATCH[-PRERELEASE][+BUILD])."
+            exit 1
+          fi
 
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -152,6 +172,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate semantic version tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]]; then
+            echo "Tag '$TAG' is not valid SemVer (expected vMAJOR.MINOR.PATCH[-PRERELEASE][+BUILD])."
+            exit 1
+          fi
 
       - name: Set version from tag
         if: startsWith(github.ref, 'refs/tags/v')

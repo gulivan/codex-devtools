@@ -81,6 +81,32 @@ Default URL:
 - `pnpm lint`: run ESLint
 - `pnpm typecheck`: run TypeScript type checks
 
+## CI/CD
+
+- `.github/workflows/ci.yml`: typecheck/lint/build/test on `main` and PRs.
+- `.github/workflows/release.yml`: cross-platform packaging on semver tags (`v*`) and manual dispatch.
+- `.github/workflows/npm-publish.yml`: npm publish on semver tags (`v*`) and manual dispatch.
+
+Required GitHub repository secret for npm publishing:
+
+- `NPM_TOKEN`: npm automation token (or granular token with publish + 2FA bypass).
+
+## Versioning (SemVer)
+
+Releases use semantic version tags:
+
+- `vMAJOR.MINOR.PATCH` (example: `v0.1.1`)
+- optional pre-release/build metadata (`v1.2.3-beta.1`, `v1.2.3+build.4`)
+
+Tag and publish flow:
+
+```bash
+npm version patch
+git push origin main --follow-tags
+```
+
+`release.yml` and `npm-publish.yml` validate tag format and fail if the tag is not valid SemVer.
+
 ## Troubleshooting
 
 If `pnpm dev` fails with `Electron failed to install correctly` or `Electron uninstall`:

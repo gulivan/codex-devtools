@@ -4,10 +4,14 @@
   "version": "0.1.0",
   "description": "Desktop app for inspecting Codex session data",
   "license": "MIT",
+  "author": {
+    "name": "codex-devtools contributors",
+    "email": "gulivan@users.noreply.github.com"
+  },
   "homepage": "https://github.com/gulivan/codex-devtools",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gulivan/codex-devtools.git"
+    "url": "git+https://github.com/gulivan/codex-devtools.git"
   },
   "bugs": {
     "url": "https://github.com/gulivan/codex-devtools/issues"
@@ -21,12 +25,12 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "dist": "electron-builder --mac --win --linux",
-    "dist:mac": "electron-builder --mac",
-    "dist:mac:arm64": "electron-builder --mac --arm64",
-    "dist:mac:x64": "electron-builder --mac --x64",
-    "dist:win": "electron-builder --win",
-    "dist:linux": "electron-builder --linux",
+    "dist": "electron-builder --mac --win --linux --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:mac:arm64": "electron-builder --mac --arm64 --publish never",
+    "dist:mac:x64": "electron-builder --mac --x64 --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint .",
     "test": "vitest run",
@@ -108,13 +112,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "releaseType": "draft"
-      }
-    ]
+    }
   },
   "publishConfig": {
     "access": "public"
