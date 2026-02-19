@@ -50,6 +50,12 @@ bunx codex-devtools --web
 
 Standalone mode serves at `http://localhost:3456`.
 
+To make web mode the default without flags:
+
+```bash
+CODEX_DEVTOOLS_DEFAULT_MODE=web npx codex-devtools
+```
+
 ## Standalone mode
 
 Run as an HTTP server without Electron:
