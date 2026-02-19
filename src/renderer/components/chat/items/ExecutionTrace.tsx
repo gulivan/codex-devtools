@@ -1,7 +1,11 @@
 import { useMemo, useState } from 'react';
 
+import { Wrench } from 'lucide-react';
+
 import { CodeBlockViewer } from '../viewers/CodeBlockViewer';
 import { MarkdownViewer } from '../viewers/MarkdownViewer';
+import { notifyChatLayoutInvalidated } from '../chatLayoutEvents';
+import { isTerminalCommandExecution } from './toolExecutionUtils';
 
 import type { CodexToolExecution } from '@main/types';
 
@@ -78,6 +82,7 @@ export const ExecutionTrace = ({ execution }: ExecutionTraceProps): JSX.Element 
 
   const output = execution.functionOutput?.output ?? '';
   const commandPreview = useMemo(() => parseCommandPreview(execution), [execution]);
+  const isTerminalCommand = useMemo(() => isTerminalCommandExecution(execution), [execution]);
   const tokenUsageLabel = execution.tokenUsage
     ? `${execution.tokenUsage.inputTokens.toLocaleString()} in • ${execution.tokenUsage.outputTokens.toLocaleString()} out`
     : null;
@@ -88,11 +93,27 @@ export const ExecutionTrace = ({ execution }: ExecutionTraceProps): JSX.Element 
   const formattedOutput = useMemo(() => prettyPrintJson(output), [output]);
 
   return (
-    <section className={`trace-card ${execution.functionOutput?.isError ? 'error' : ''}`}>
-      <button type="button" className="trace-header" onClick={() => setExpanded((value) => !value)}>
+    <section
+      className={`trace-card ${execution.functionOutput?.isError ? 'error' : ''} ${isTerminalCommand ? 'terminal' : ''}`}
+    >
+      <button
+        type="button"
+        className="trace-header"
+        onClick={() => {
+          setExpanded((value) => !value);
+          notifyChatLayoutInvalidated();
+        }}
+      >
         <div className="trace-header-main">
-          <span className="trace-name">{execution.functionCall.name}</span>
-          {commandPreview ? <span className="trace-command-preview">{commandPreview}</span> : null}
+          <span className="trace-name">
+            {isTerminalCommand ? <Wrench size={13} className="trace-name-icon" aria-hidden="true" /> : null}
+            <span>{execution.functionCall.name}</span>
+          </span>
+          {commandPreview ? (
+            <span className={`trace-command-preview ${isTerminalCommand ? 'trace-terminal-line' : ''}`}>
+              {isTerminalCommand ? `$ ${commandPreview}` : commandPreview}
+            </span>
+          ) : null}
         </div>
         <div className="trace-header-meta">
           {tokenUsageLabel ? <span className="trace-token-usage">{tokenUsageLabel}</span> : null}

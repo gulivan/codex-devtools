@@ -6,6 +6,7 @@ interface SessionItemProps {
   session: CodexSession;
   isActive: boolean;
   preview: string;
+  hasUpdate: boolean;
   onSelect: () => void;
 }
 
@@ -31,7 +32,13 @@ function formatSessionSize(fileSizeBytes: number | undefined): string | null {
   return `${megabytes.toFixed(megabytes >= 100 ? 0 : 1)} MB`;
 }
 
-export const SessionItem = ({ session, isActive, preview, onSelect }: SessionItemProps): JSX.Element => {
+export const SessionItem = ({
+  session,
+  isActive,
+  preview,
+  hasUpdate,
+  onSelect,
+}: SessionItemProps): JSX.Element => {
   const firstUsage =
     Array.isArray(session.modelUsages) && session.modelUsages.length > 0
       ? session.modelUsages[0]
@@ -48,7 +55,12 @@ export const SessionItem = ({ session, isActive, preview, onSelect }: SessionIte
   return (
     <button type="button" onClick={onSelect} className={`session-item ${isActive ? 'active' : ''}`}>
       <div className="session-item-header">
-        <span className="session-model-badge">{badgeLabel}</span>
+        <div className="session-item-header-left">
+          <span className="session-model-badge">{badgeLabel}</span>
+          {hasUpdate ? (
+            <span className="session-update-dot" title="New activity" aria-label="New activity" />
+          ) : null}
+        </div>
         <div className="session-item-meta">
           <time className="session-time">{format(new Date(session.startTime), 'p')}</time>
           {sizeLabel ? <span className="session-size">{sizeLabel}</span> : null}

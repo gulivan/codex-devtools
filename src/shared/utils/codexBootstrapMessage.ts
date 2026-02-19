@@ -2,7 +2,8 @@ export type CodexBootstrapMessageKind =
   | 'agents_instructions'
   | 'environment_context'
   | 'permissions_instructions'
-  | 'collaboration_mode';
+  | 'collaboration_mode'
+  | 'turn_aborted';
 
 const AGENTS_HEADING_PATTERN = /^#?\s*AGENTS\.md instructions\b/i;
 const AGENTS_INSTRUCTIONS_BLOCK_PATTERN = /<INSTRUCTIONS>[\s\S]*<\/INSTRUCTIONS>/i;
@@ -12,6 +13,7 @@ const ENVIRONMENT_CONTEXT_SHELL_PATTERN = /<shell>[\s\S]*<\/shell>/i;
 const PERMISSIONS_INSTRUCTIONS_WRAPPER_PATTERN =
   /^<permissions\s+instructions>[\s\S]*<\/permissions\s+instructions>$/i;
 const COLLABORATION_MODE_WRAPPER_PATTERN = /^<collaboration_mode>[\s\S]*<\/collaboration_mode>$/i;
+const TURN_ABORTED_WRAPPER_PATTERN = /^<turn_aborted>[\s\S]*<\/turn_aborted>$/i;
 
 export function classifyCodexBootstrapMessage(content: string): CodexBootstrapMessageKind | null {
   const value = content.trim();
@@ -37,6 +39,10 @@ export function classifyCodexBootstrapMessage(content: string): CodexBootstrapMe
 
   if (COLLABORATION_MODE_WRAPPER_PATTERN.test(value)) {
     return 'collaboration_mode';
+  }
+
+  if (TURN_ABORTED_WRAPPER_PATTERN.test(value)) {
+    return 'turn_aborted';
   }
 
   return null;

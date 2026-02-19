@@ -219,6 +219,167 @@ describe('CodexChunkBuilder', () => {
     expect(chunks[1].textBlocks).toEqual(['Checking scripts now.']);
   });
 
+  it('builds ordered assistant sections while grouping reasoning and tool executions', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:11:00.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'run check' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:11:01.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Starting checks.' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:11:02.000Z',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: '{"cmd":"pnpm test"}',
+          call_id: 'call-ordered-1',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:11:03.000Z',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-ordered-1',
+          output: '{"metadata":{"exit_code":0}}',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:11:04.000Z',
+        payload: {
+          type: 'reasoning',
+          summary: [{ text: 'Inspecting the output' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:11:05.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Checks completed.' }],
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].type).toBe('user');
+
+    if (chunks[1].type !== 'ai') {
+      throw new Error('Expected AI chunk');
+    }
+
+    expect(chunks[1].sections?.map((section) => section.type)).toEqual([
+      'message',
+      'tool_executions',
+      'reasoning',
+      'message',
+    ]);
+  });
+
+  it('does not duplicate tool execution sections when output arrives after reasoning', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:12:00.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'run another check' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:12:01.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Running checks.' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:12:02.000Z',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: '{"cmd":"pnpm test"}',
+          call_id: 'call-ordered-2',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:12:03.000Z',
+        payload: {
+          type: 'reasoning',
+          summary: [{ text: 'Inspecting output before final response' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:12:04.000Z',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-ordered-2',
+          output: '{"metadata":{"exit_code":0}}',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T22:12:05.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Checks complete.' }],
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].type).toBe('user');
+
+    if (chunks[1].type !== 'ai') {
+      throw new Error('Expected AI chunk');
+    }
+
+    expect(chunks[1].sections?.map((section) => section.type)).toEqual([
+      'message',
+      'tool_executions',
+      'reasoning',
+      'message',
+    ]);
+
+    const toolSections = (chunks[1].sections ?? []).filter((section) => section.type === 'tool_executions');
+    expect(toolSections).toHaveLength(1);
+    if (toolSections[0]?.type !== 'tool_executions') {
+      throw new Error('Expected tool_executions section');
+    }
+
+    expect(toolSections[0].executions).toHaveLength(1);
+    expect(toolSections[0].executions[0]?.functionCall.callId).toBe('call-ordered-2');
+  });
+
   it('deduplicates attachment messages and strips wrapper tags', () => {
     const entries: CodexLogEntry[] = [
       {
@@ -529,6 +690,154 @@ describe('CodexChunkBuilder', () => {
     expect(chunks[2].timestamp).toBe('2026-02-18T22:30:03.000Z');
   });
 
+  it('inserts a collaboration mode change divider when turn_context mode changes', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'turn_context',
+        timestamp: '2026-02-18T23:10:00.000Z',
+        payload: {
+          cwd: '/repo/project-a',
+          model: 'gpt-5.3-codex',
+          collaboration_mode: { mode: 'default' },
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T23:10:01.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'first prompt' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T23:10:02.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'first response' }],
+        },
+      },
+      {
+        type: 'turn_context',
+        timestamp: '2026-02-18T23:10:03.000Z',
+        payload: {
+          cwd: '/repo/project-a',
+          model: 'gpt-5.3-codex',
+          collaboration_mode: { mode: 'collaborator' },
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T23:10:04.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'second prompt' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-18T23:10:05.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'second response' }],
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(5);
+    expect(chunks[0].type).toBe('user');
+    expect(chunks[1].type).toBe('ai');
+    expect(chunks[2].type).toBe('collaboration_mode_change');
+    expect(chunks[3].type).toBe('user');
+    expect(chunks[4].type).toBe('ai');
+
+    if (chunks[2].type !== 'collaboration_mode_change') {
+      throw new Error('Expected collaboration_mode_change chunk');
+    }
+
+    expect(chunks[2].previousMode).toBe('default');
+    expect(chunks[2].mode).toBe('collaborator');
+    expect(chunks[2].timestamp).toBe('2026-02-18T23:10:03.000Z');
+  });
+
+  it('inserts one compaction divider when compaction lifecycle events are adjacent', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T10:08:50.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'before compaction' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T10:08:51.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Working...' }],
+        },
+      },
+      {
+        type: 'compacted',
+        timestamp: '2026-02-19T10:08:56.993Z',
+        payload: {
+          message: '',
+          replacement_history: [],
+        },
+      },
+      {
+        type: 'compaction',
+        timestamp: '2026-02-19T10:08:56.994Z',
+        encrypted_content: 'gAAAAA',
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-19T10:08:56.995Z',
+        payload: {
+          type: 'context_compacted',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T10:08:58.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'after compaction' }],
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-19T10:08:59.000Z',
+        payload: {
+          type: 'agent_message',
+          message: 'Continuing with less context.',
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(5);
+    expect(chunks[0].type).toBe('user');
+    expect(chunks[1].type).toBe('ai');
+    expect(chunks[2].type).toBe('compaction');
+    expect(chunks[3].type).toBe('user');
+    expect(chunks[4].type).toBe('ai');
+    expect(chunks.filter((chunk) => chunk.type === 'compaction')).toHaveLength(1);
+  });
+
   it('converts Codex bootstrap prelude user messages into system chunks', () => {
     const entries: CodexLogEntry[] = [
       {
@@ -589,6 +898,20 @@ describe('CodexChunkBuilder', () => {
       },
       {
         type: 'response_item',
+        timestamp: '2026-02-19T11:00:02.750Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: '<turn_aborted> The user interrupted the previous turn on purpose. </turn_aborted>',
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
         timestamp: '2026-02-19T11:00:03.000Z',
         payload: {
           type: 'message',
@@ -609,21 +932,27 @@ describe('CodexChunkBuilder', () => {
     const builder = new CodexChunkBuilder();
     const chunks = builder.buildChunks(entries);
 
-    expect(chunks).toHaveLength(6);
+    expect(chunks).toHaveLength(7);
     expect(chunks[0].type).toBe('system');
     expect(chunks[1].type).toBe('system');
     expect(chunks[2].type).toBe('system');
     expect(chunks[3].type).toBe('system');
-    expect(chunks[4]).toEqual({
+    expect(chunks[4].type).toBe('system');
+    if (chunks[4].type !== 'system') {
+      throw new Error('Expected system chunk');
+    }
+
+    expect(chunks[4].content).toContain('<turn_aborted>');
+    expect(chunks[5]).toEqual({
       type: 'user',
       content: 'show actual user prompt in sidebar',
       timestamp: '2026-02-19T11:00:03.000Z',
     });
 
-    if (chunks[5].type !== 'ai') {
+    if (chunks[6].type !== 'ai') {
       throw new Error('Expected AI chunk');
     }
 
-    expect(chunks[5].textBlocks).toEqual(['Working on it.']);
+    expect(chunks[6].textBlocks).toEqual(['Working on it.']);
   });
 });

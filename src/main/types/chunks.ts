@@ -50,10 +50,28 @@ export interface AIChunk {
   textBlocks: string[];
   toolExecutions: CodexToolExecution[];
   reasoning: string[];
+  sections?: AIChunkSection[];
   metrics: Partial<CodexSessionMetrics>;
   timestamp: string;
   duration: number;
 }
+
+export interface AIMessageSection {
+  type: 'message';
+  textBlocks: string[];
+}
+
+export interface AIReasoningSection {
+  type: 'reasoning';
+  summaries: string[];
+}
+
+export interface AIToolExecutionsSection {
+  type: 'tool_executions';
+  executions: CodexToolExecution[];
+}
+
+export type AIChunkSection = AIMessageSection | AIReasoningSection | AIToolExecutionsSection;
 
 export interface SystemChunk {
   type: 'system';
@@ -70,4 +88,22 @@ export interface ModelChangeChunk {
   timestamp: string;
 }
 
-export type CodexChunk = UserChunk | AIChunk | SystemChunk | ModelChangeChunk;
+export interface CollaborationModeChangeChunk {
+  type: 'collaboration_mode_change';
+  previousMode: string;
+  mode: string;
+  timestamp: string;
+}
+
+export interface CompactionChunk {
+  type: 'compaction';
+  timestamp: string;
+}
+
+export type CodexChunk =
+  | UserChunk
+  | AIChunk
+  | SystemChunk
+  | ModelChangeChunk
+  | CollaborationModeChangeChunk
+  | CompactionChunk;

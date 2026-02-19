@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 
 import {
   type AIChunk,
+  type AIChunkSection,
   type CodexChunk,
   type CodexLogEntry,
   type CodexSessionMetrics,
@@ -14,6 +15,9 @@ import {
   getContentBlockText,
   isAgentMessagePayload,
   isAgentReasoningPayload,
+  isCompactionEntry,
+  isCompactedEntry,
+  isContextCompactedPayload,
   isEventMsgEntry,
   isFunctionCallOutputPayload,
   isFunctionCallPayload,
@@ -29,6 +33,30 @@ import { classifyCodexBootstrapMessage } from '@shared/utils';
 
 import { CodexMessageClassifier } from '../parsing/CodexMessageClassifier';
 
+type SectionSource = 'response' | 'event';
+
+interface InProgressMessageSection {
+  kind: 'message';
+  source: SectionSource;
+  textBlocks: string[];
+}
+
+interface InProgressReasoningSection {
+  kind: 'reasoning';
+  source: SectionSource;
+  summaries: string[];
+}
+
+interface InProgressToolsSection {
+  kind: 'tools';
+  toolIndexes: number[];
+}
+
+type InProgressAISection =
+  | InProgressMessageSection
+  | InProgressReasoningSection
+  | InProgressToolsSection;
+
 interface InProgressAIChunk {
   startTimeMs: number;
   endTimeMs: number;
@@ -38,6 +66,7 @@ interface InProgressAIChunk {
   toolExecutions: CodexToolExecution[];
   responseReasoning: string[];
   eventReasoning: string[];
+  sections: InProgressAISection[];
   metrics: Partial<CodexSessionMetrics>;
   callIndexById: Map<string, { index: number; startTimeMs: number }>;
   pendingUsageToolIndex: number | null;
@@ -444,6 +473,25 @@ function normalizeReasoningEffort(effort: string | undefined): string {
   return value ? value : 'unknown';
 }
 
+function normalizeCollaborationMode(
+  value: string | Record<string, unknown> | undefined,
+): string {
+  if (!value) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+
+  const mode = value.mode;
+  if (typeof mode === 'string') {
+    return mode.trim();
+  }
+
+  return '';
+}
+
 function pushUniqueAdjacent(blocks: string[], value: string): void {
   const text = value.trim();
   if (!text) {
@@ -458,13 +506,173 @@ function pushUniqueAdjacent(blocks: string[], value: string): void {
   blocks.push(text);
 }
 
-function pickPreferredBlocks(primary: string[], fallback: string[]): string[] {
-  const source = primary.length > 0 ? primary : fallback;
-  const deduped: string[] = [];
-  for (const block of source) {
-    pushUniqueAdjacent(deduped, block);
+function addMessageSection(
+  ai: InProgressAIChunk,
+  source: SectionSource,
+  blocks: string[],
+): void {
+  const textBlocks: string[] = [];
+  for (const block of blocks) {
+    pushUniqueAdjacent(textBlocks, block);
   }
-  return deduped;
+
+  if (textBlocks.length === 0) {
+    return;
+  }
+
+  ai.sections.push({
+    kind: 'message',
+    source,
+    textBlocks,
+  });
+}
+
+function addReasoningSection(
+  ai: InProgressAIChunk,
+  source: SectionSource,
+  summaries: string[],
+): void {
+  const nextSummaries: string[] = [];
+  for (const summary of summaries) {
+    pushUniqueAdjacent(nextSummaries, summary);
+  }
+
+  if (nextSummaries.length === 0) {
+    return;
+  }
+
+  const last = ai.sections[ai.sections.length - 1];
+  if (last?.kind === 'reasoning' && last.source === source) {
+    for (const summary of nextSummaries) {
+      pushUniqueAdjacent(last.summaries, summary);
+    }
+    return;
+  }
+
+  ai.sections.push({
+    kind: 'reasoning',
+    source,
+    summaries: nextSummaries,
+  });
+}
+
+function addToolSectionIndex(ai: InProgressAIChunk, toolIndex: number): void {
+  for (const section of ai.sections) {
+    if (section.kind === 'tools' && section.toolIndexes.includes(toolIndex)) {
+      return;
+    }
+  }
+
+  const last = ai.sections[ai.sections.length - 1];
+  if (last?.kind === 'tools') {
+    if (!last.toolIndexes.includes(toolIndex)) {
+      last.toolIndexes.push(toolIndex);
+    }
+    return;
+  }
+
+  ai.sections.push({
+    kind: 'tools',
+    toolIndexes: [toolIndex],
+  });
+}
+
+function shouldInsertCompactionChunk(chunks: CodexChunk[], timestamp: string): boolean {
+  const last = chunks[chunks.length - 1];
+  if (!last || last.type !== 'compaction') {
+    return true;
+  }
+
+  const deltaMs = Math.abs(parseTimestampMs(timestamp) - parseTimestampMs(last.timestamp));
+  return deltaMs > 1_000;
+}
+
+function buildOrderedAISections(ai: InProgressAIChunk): AIChunkSection[] {
+  const hasResponseMessages = ai.sections.some(
+    (section) => section.kind === 'message' && section.source === 'response',
+  );
+  const hasResponseReasoning = ai.sections.some(
+    (section) => section.kind === 'reasoning' && section.source === 'response',
+  );
+
+  const selected = ai.sections.filter((section) => {
+    if (section.kind === 'message') {
+      return section.source === (hasResponseMessages ? 'response' : 'event');
+    }
+
+    if (section.kind === 'reasoning') {
+      return section.source === (hasResponseReasoning ? 'response' : 'event');
+    }
+
+    return true;
+  });
+
+  const merged: AIChunkSection[] = [];
+  for (const section of selected) {
+    if (section.kind === 'message') {
+      const textBlocks: string[] = [];
+      for (const block of section.textBlocks) {
+        pushUniqueAdjacent(textBlocks, block);
+      }
+
+      if (textBlocks.length > 0) {
+        merged.push({
+          type: 'message',
+          textBlocks,
+        });
+      }
+      continue;
+    }
+
+    if (section.kind === 'reasoning') {
+      const last = merged[merged.length - 1];
+      if (last?.type === 'reasoning') {
+        for (const summary of section.summaries) {
+          pushUniqueAdjacent(last.summaries, summary);
+        }
+      } else {
+        const summaries: string[] = [];
+        for (const summary of section.summaries) {
+          pushUniqueAdjacent(summaries, summary);
+        }
+
+        if (summaries.length > 0) {
+          merged.push({
+            type: 'reasoning',
+            summaries,
+          });
+        }
+      }
+      continue;
+    }
+
+    const executions = section.toolIndexes
+      .map((index) => ai.toolExecutions[index])
+      .filter((execution): execution is CodexToolExecution => Boolean(execution));
+    if (executions.length === 0) {
+      continue;
+    }
+
+    const last = merged[merged.length - 1];
+    if (last?.type === 'tool_executions') {
+      const seenCallIds = new Set(last.executions.map((execution) => execution.functionCall.callId));
+      for (const execution of executions) {
+        if (seenCallIds.has(execution.functionCall.callId)) {
+          continue;
+        }
+
+        seenCallIds.add(execution.functionCall.callId);
+        last.executions.push(execution);
+      }
+    } else {
+      merged.push({
+        type: 'tool_executions',
+        executions: [...executions],
+      });
+    }
+  }
+
+  return merged;
 }
 
 function mergePendingUser(
@@ -588,14 +796,27 @@ export class CodexChunkBuilder {
     let currentAI: InProgressAIChunk | null = null;
     let pendingUser: PendingUserEvent | null = null;
     let lastSeenModelUsage: ModelUsageState | null = null;
+    let lastSeenCollaborationMode = '';
 
     const flushAIChunk = (): void => {
       if (!currentAI) {
         return;
       }
 
-      const textBlocks = pickPreferredBlocks(currentAI.responseTextBlocks, currentAI.eventTextBlocks);
-      const reasoning = pickPreferredBlocks(currentAI.responseReasoning, currentAI.eventReasoning);
+      const sections = buildOrderedAISections(currentAI);
+      const textBlocks: string[] = [];
+      const reasoning: string[] = [];
+      for (const section of sections) {
+        if (section.type === 'message') {
+          for (const block of section.textBlocks) {
+            pushUniqueAdjacent(textBlocks, block);
+          }
+        } else if (section.type === 'reasoning') {
+          for (const summary of section.summaries) {
+            pushUniqueAdjacent(reasoning, summary);
+          }
+        }
+      }
 
       if (
         textBlocks.length === 0 &&
@@ -611,6 +832,7 @@ export class CodexChunkBuilder {
         textBlocks,
         toolExecutions: currentAI.toolExecutions,
         reasoning,
+        sections,
         metrics: {
           ...currentAI.metrics,
           toolCallCount: currentAI.toolExecutions.length,
@@ -637,6 +859,7 @@ export class CodexChunkBuilder {
         toolExecutions: [],
         responseReasoning: [],
         eventReasoning: [],
+        sections: [],
         metrics: {},
         callIndexById: new Map(),
         pendingUsageToolIndex: null,
@@ -656,40 +879,75 @@ export class CodexChunkBuilder {
     for (const entry of sortedEntries) {
       const timestampMs = parseTimestampMs(entry.timestamp);
 
-      if (isTurnContextEntry(entry)) {
-        const model = normalizeModel(entry.payload.model);
-        if (!model) {
-          continue;
-        }
-
-        const usage: ModelUsageState = {
-          model,
-          reasoningEffort: normalizeReasoningEffort(entry.payload.effort),
-        };
-
-        if (lastSeenModelUsage === null) {
-          lastSeenModelUsage = usage;
-          continue;
-        }
-
-        if (
-          lastSeenModelUsage.model === usage.model &&
-          lastSeenModelUsage.reasoningEffort === usage.reasoningEffort
-        ) {
-          continue;
-        }
-
+      if (isCompactedEntry(entry) || isCompactionEntry(entry)) {
         flushPendingEventUser();
         flushAIChunk();
-        chunks.push({
-          type: 'model_change',
-          previousModel: lastSeenModelUsage.model,
-          previousReasoningEffort: lastSeenModelUsage.reasoningEffort,
-          model: usage.model,
-          reasoningEffort: usage.reasoningEffort,
-          timestamp: entry.timestamp,
-        });
-        lastSeenModelUsage = usage;
+        if (shouldInsertCompactionChunk(chunks, entry.timestamp)) {
+          chunks.push({
+            type: 'compaction',
+            timestamp: entry.timestamp,
+          });
+        }
+        continue;
+      }
+
+      if (isTurnContextEntry(entry)) {
+        const model = normalizeModel(entry.payload.model);
+        if (model) {
+          const usage: ModelUsageState = {
+            model,
+            reasoningEffort: normalizeReasoningEffort(entry.payload.effort),
+          };
+
+          if (lastSeenModelUsage === null) {
+            lastSeenModelUsage = usage;
+          } else if (
+            lastSeenModelUsage.model !== usage.model ||
+            lastSeenModelUsage.reasoningEffort !== usage.reasoningEffort
+          ) {
+            flushPendingEventUser();
+            flushAIChunk();
+            chunks.push({
+              type: 'model_change',
+              previousModel: lastSeenModelUsage.model,
+              previousReasoningEffort: lastSeenModelUsage.reasoningEffort,
+              model: usage.model,
+              reasoningEffort: usage.reasoningEffort,
+              timestamp: entry.timestamp,
+            });
+            lastSeenModelUsage = usage;
+          }
+        }
+
+        const collaborationMode = normalizeCollaborationMode(entry.payload.collaboration_mode);
+        if (collaborationMode) {
+          if (!lastSeenCollaborationMode) {
+            lastSeenCollaborationMode = collaborationMode;
+          } else if (lastSeenCollaborationMode !== collaborationMode) {
+            flushPendingEventUser();
+            flushAIChunk();
+            chunks.push({
+              type: 'collaboration_mode_change',
+              previousMode: lastSeenCollaborationMode,
+              mode: collaborationMode,
+              timestamp: entry.timestamp,
+            });
+            lastSeenCollaborationMode = collaborationMode;
+          }
+        }
+
+        continue;
+      }
+
+      if (isEventMsgEntry(entry) && isContextCompactedPayload(entry.payload)) {
+        flushPendingEventUser();
+        flushAIChunk();
+        if (shouldInsertCompactionChunk(chunks, entry.timestamp)) {
+          chunks.push({
+            type: 'compaction',
+            timestamp: entry.timestamp,
+          });
+        }
         continue;
       }
 
@@ -745,12 +1003,15 @@ export class CodexChunkBuilder {
       ai.endTimeMs = Math.max(ai.endTimeMs, timestampMs);
 
       if (isResponseItemEntry(entry) && isMessagePayload(entry.payload) && entry.payload.role === 'assistant') {
+        const entryTextBlocks: string[] = [];
         for (const content of entry.payload.content) {
           const text = getContentBlockText(content);
           if (text) {
             pushUniqueAdjacent(ai.responseTextBlocks, text);
+            pushUniqueAdjacent(entryTextBlocks, text);
           }
         }
+        addMessageSection(ai, 'response', entryTextBlocks);
         continue;
       }
 
@@ -771,6 +1032,7 @@ export class CodexChunkBuilder {
           startTimeMs: timestampMs,
         });
         ai.toolExecutions.push(toolExecution);
+        addToolSectionIndex(ai, ai.toolExecutions.length - 1);
         continue;
       }
 
@@ -784,6 +1046,7 @@ export class CodexChunkBuilder {
             isError: parseToolOutputError(entry.payload.output),
           };
           tool.duration = Math.max(timestampMs - existing.startTimeMs, 0);
+          addToolSectionIndex(ai, existing.index);
         } else {
           ai.toolExecutions.push({
             functionCall: {
@@ -799,24 +1062,29 @@ export class CodexChunkBuilder {
             duration: 0,
             tokenUsage: null,
           });
+          addToolSectionIndex(ai, ai.toolExecutions.length - 1);
         }
         continue;
       }
 
       if (isResponseItemEntry(entry) && isReasoningPayload(entry.payload)) {
-        for (const text of reasoningSummaryToText(entry.payload.summary)) {
+        const entrySummaries = reasoningSummaryToText(entry.payload.summary);
+        for (const text of entrySummaries) {
           pushUniqueAdjacent(ai.responseReasoning, text);
         }
+        addReasoningSection(ai, 'response', entrySummaries);
         continue;
       }
 
       if (isEventMsgEntry(entry) && isAgentMessagePayload(entry.payload)) {
         pushUniqueAdjacent(ai.eventTextBlocks, entry.payload.message);
+        addMessageSection(ai, 'event', [entry.payload.message]);
         continue;
       }
 
       if (isEventMsgEntry(entry) && isAgentReasoningPayload(entry.payload)) {
         pushUniqueAdjacent(ai.eventReasoning, entry.payload.text);
+        addReasoningSection(ai, 'event', [entry.payload.text]);
         continue;
       }
 

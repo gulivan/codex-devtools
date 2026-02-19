@@ -28,35 +28,81 @@ interface StoreAccess {
   getState: () => AppState;
 }
 
+const REFRESH_DEBOUNCE_MS = 120;
+const FALLBACK_POLL_INTERVAL_MS = 1500;
+
 export function initializeEventListeners(
   store: StoreAccess = useAppStore,
   client: RendererApi = api,
 ): () => void {
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let polling = false;
 
-  const cleanup = client.onFileChange(() => {
+  const cleanup = client.onFileChange((event) => {
     if (refreshTimer) {
       clearTimeout(refreshTimer);
     }
 
     refreshTimer = setTimeout(() => {
       const state = store.getState();
+      state.markSessionUpdatedByPath(event.filePath);
       void state.fetchProjects();
 
       if (state.activeProjectCwd) {
-        void state.fetchSessions(state.activeProjectCwd);
+        void state.fetchSessions(state.activeProjectCwd, {
+          prefetchPreviews: false,
+          background: true,
+        }).then(() => {
+          store.getState().markSessionUpdatedByPath(event.filePath);
+        });
       }
 
       if (state.activeSessionId) {
         void state.fetchChunks(state.activeSessionId);
       }
-    }, 120);
+    }, REFRESH_DEBOUNCE_MS);
   });
+
+  const runFallbackRefresh = (): void => {
+    if (polling) {
+      return;
+    }
+
+    const state = store.getState();
+    if (state.sessionsLoading || state.chunksLoading) {
+      return;
+    }
+
+    if (!state.activeProjectCwd && !state.activeSessionId) {
+      return;
+    }
+
+    polling = true;
+    void Promise.all([
+      state.activeProjectCwd
+        ? state.fetchSessions(state.activeProjectCwd, {
+            prefetchPreviews: false,
+            background: true,
+          })
+        : Promise.resolve(),
+      state.activeSessionId ? state.fetchChunks(state.activeSessionId) : Promise.resolve(),
+    ]).finally(() => {
+      polling = false;
+    });
+  };
+
+  pollTimer = setInterval(runFallbackRefresh, FALLBACK_POLL_INTERVAL_MS);
 
   return (): void => {
     if (refreshTimer) {
       clearTimeout(refreshTimer);
       refreshTimer = null;
+    }
+
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
     }
 
     cleanup();

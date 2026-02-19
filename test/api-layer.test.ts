@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -208,6 +208,35 @@ describe('api layer', () => {
     const searchResult = await serviceContext.searchSessions('login');
     expect(searchResult.totalMatches).toBeGreaterThan(0);
     expect(searchResult.results[0]?.sessionId).toBe('session-1');
+  });
+
+  it('refreshes chunks when the session file changes even without watcher invalidation', async () => {
+    const filePath = path.join(sessionsRoot, '2026', '02', '18', 'rollout-session-1.jsonl');
+    const initialChunks = await serviceContext.getSessionChunks('session-1');
+    expect(initialChunks).not.toBeNull();
+
+    appendFileSync(
+      filePath,
+      `${JSON.stringify({
+        type: 'response_item',
+        timestamp: '2026-02-18T21:00:07.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Follow-up status update.' }],
+        },
+      })}\n`,
+      'utf8',
+    );
+
+    const refreshedChunks = await serviceContext.getSessionChunks('session-1');
+    expect(refreshedChunks).not.toBeNull();
+    expect(
+      refreshedChunks?.some(
+        (chunk) =>
+          chunk.type === 'ai' && chunk.textBlocks.some((text) => text.includes('Follow-up status update.')),
+      ),
+    ).toBe(true);
   });
 
   it('updates config by section key', () => {

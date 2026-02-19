@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 
+import { Wrench } from 'lucide-react';
+
 import { ExecutionTrace } from './ExecutionTrace';
+import { isTerminalCommandExecution } from './toolExecutionUtils';
+import { notifyChatLayoutInvalidated } from '../chatLayoutEvents';
 
 import type { CodexToolExecution } from '@main/types';
-
-const EXEC_COMMAND_NAMES = new Set(['exec_command', 'shell_command']);
 
 interface ExecutionTraceGroupProps {
   executions: CodexToolExecution[];
@@ -12,7 +14,7 @@ interface ExecutionTraceGroupProps {
 }
 
 export function isExecCommandExecution(execution: CodexToolExecution): boolean {
-  return EXEC_COMMAND_NAMES.has(execution.functionCall.name.toLowerCase());
+  return isTerminalCommandExecution(execution);
 }
 
 export const ExecutionTraceGroup = ({
@@ -50,9 +52,19 @@ export const ExecutionTraceGroup = ({
 
   return (
     <section className="trace-group-card">
-      <button type="button" className="trace-group-header" onClick={() => setExpanded((value) => !value)}>
+      <button
+        type="button"
+        className="trace-group-header"
+        onClick={() => {
+          setExpanded((value) => !value);
+          notifyChatLayoutInvalidated();
+        }}
+      >
         <div className="trace-header-main">
-          <span className="trace-name">{title}</span>
+          <span className="trace-name">
+            <Wrench size={13} className="trace-name-icon" aria-hidden="true" />
+            <span>{title}</span>
+          </span>
           <span className="trace-command-preview">{countLabel}</span>
         </div>
 

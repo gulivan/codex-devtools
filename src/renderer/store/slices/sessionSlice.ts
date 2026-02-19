@@ -9,6 +9,29 @@ import type { AppState } from '../types';
 const logger = createLogger('Store:sessionSlice');
 const PREVIEW_PREFETCH_LIMIT = 25;
 
+function normalizeFilePath(value: string): string {
+  return value.trim().replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
+function getFileName(value: string): string {
+  const normalized = normalizeFilePath(value);
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? '';
+}
+
+function removeSessionUpdateBadge(
+  badges: Record<string, boolean>,
+  sessionId: string,
+): Record<string, boolean> | null {
+  if (!badges[sessionId]) {
+    return null;
+  }
+
+  const nextBadges = { ...badges };
+  delete nextBadges[sessionId];
+  return nextBadges;
+}
+
 function extractFirstMessagePreview(chunks: CodexChunk[] | null): string | null {
   if (!chunks || chunks.length === 0) {
     return null;
@@ -33,8 +56,16 @@ export interface SessionSlice {
   sessionsLoading: boolean;
   sessionsError: string | null;
   sessionPreviews: Record<string, string>;
-  fetchSessions: (projectCwd?: string) => Promise<void>;
+  sessionUpdateBadges: Record<string, boolean>;
+  fetchSessions: (
+    projectCwd?: string,
+    options?: {
+      prefetchPreviews?: boolean;
+      background?: boolean;
+    },
+  ) => Promise<void>;
   selectSession: (sessionId: string) => Promise<void>;
+  markSessionUpdatedByPath: (filePath: string) => void;
 }
 
 export const createSessionSlice = (
@@ -45,15 +76,20 @@ export const createSessionSlice = (
   sessionsLoading: false,
   sessionsError: null,
   sessionPreviews: {},
+  sessionUpdateBadges: {},
 
-  fetchSessions: async (projectCwd) => {
+  fetchSessions: async (projectCwd, options) => {
     const cwd = projectCwd ?? get().activeProjectCwd;
     if (!cwd) {
       set({ sessions: [], activeSessionId: null });
       return;
     }
 
-    set({ sessionsLoading: true, sessionsError: null });
+    const shouldPrefetchPreviews = options?.prefetchPreviews ?? true;
+    const isBackgroundRefresh = options?.background ?? false;
+    if (!isBackgroundRefresh) {
+      set({ sessionsLoading: true, sessionsError: null });
+    }
 
     try {
       const sessions = await client.getSessions(cwd);
@@ -61,45 +97,85 @@ export const createSessionSlice = (
         const nextActiveSessionId = sessions.some((session) => session.id === state.activeSessionId)
           ? state.activeSessionId
           : null;
+        const previousSessionsById = new Map(state.sessions.map((session) => [session.id, session]));
+        const nextBadges: Record<string, boolean> = {};
+        const validSessionIds = new Set(sessions.map((session) => session.id));
+        for (const [sessionId, hasUpdate] of Object.entries(state.sessionUpdateBadges)) {
+          if (hasUpdate && validSessionIds.has(sessionId)) {
+            nextBadges[sessionId] = true;
+          }
+        }
+
+        for (const session of sessions) {
+          const previous = previousSessionsById.get(session.id);
+          if (!previous) {
+            continue;
+          }
+
+          const previousSize = previous.fileSizeBytes;
+          const nextSize = session.fileSizeBytes;
+          if (
+            typeof previousSize === 'number' &&
+            Number.isFinite(previousSize) &&
+            typeof nextSize === 'number' &&
+            Number.isFinite(nextSize) &&
+            nextSize > previousSize
+          ) {
+            nextBadges[session.id] = true;
+          }
+        }
 
         return {
           sessions,
-          sessionsLoading: false,
+          sessionsLoading: isBackgroundRefresh ? state.sessionsLoading : false,
           activeSessionId: nextActiveSessionId,
+          sessionUpdateBadges: nextBadges,
         };
       });
 
-      void (async () => {
-        try {
-          for (const session of sessions.slice(0, PREVIEW_PREFETCH_LIMIT)) {
-            const chunks = await client.getSessionChunks(session.id);
-            const preview = extractFirstMessagePreview(chunks);
+      if (shouldPrefetchPreviews) {
+        void (async () => {
+          try {
+            for (const session of sessions.slice(0, PREVIEW_PREFETCH_LIMIT)) {
+              const chunks = await client.getSessionChunks(session.id);
+              const preview = extractFirstMessagePreview(chunks);
 
-            if (!preview) {
-              continue;
+              if (!preview) {
+                continue;
+              }
+
+              set((state) => ({
+                sessionPreviews: {
+                  ...state.sessionPreviews,
+                  [session.id]: preview,
+                },
+              }));
             }
-
-            set((state) => ({
-              sessionPreviews: {
-                ...state.sessionPreviews,
-                [session.id]: preview,
-              },
-            }));
+          } catch (error) {
+            logger.error('Failed to prefetch session previews', error);
           }
-        } catch (error) {
-          logger.error('Failed to prefetch session previews', error);
-        }
-      })();
+        })();
+      }
     } catch (error) {
       set({
-        sessionsLoading: false,
+        sessionsLoading: isBackgroundRefresh ? get().sessionsLoading : false,
         sessionsError: error instanceof Error ? error.message : 'Failed to fetch sessions',
       });
     }
   },
 
   selectSession: async (sessionId) => {
-    set({ activeSessionId: sessionId });
+    set((state) => {
+      const nextBadges = removeSessionUpdateBadge(state.sessionUpdateBadges, sessionId);
+      if (!nextBadges) {
+        return { activeSessionId: sessionId };
+      }
+
+      return {
+        activeSessionId: sessionId,
+        sessionUpdateBadges: nextBadges,
+      };
+    });
 
     const session = get().sessions.find((item) => item.id === sessionId);
     if (session) {
@@ -107,5 +183,44 @@ export const createSessionSlice = (
     }
 
     await get().fetchChunks(sessionId);
+  },
+
+  markSessionUpdatedByPath: (filePath) => {
+    if (!filePath) {
+      return;
+    }
+
+    set((state) => {
+      const normalizedIncomingPath = normalizeFilePath(filePath);
+      const incomingFileName = getFileName(normalizedIncomingPath);
+
+      const exactMatch = state.sessions.find((item) => {
+        const normalizedSessionPath = normalizeFilePath(item.filePath);
+        return normalizedSessionPath === normalizedIncomingPath;
+      });
+
+      let matchedSession = exactMatch ?? null;
+      if (!matchedSession && incomingFileName.length > 0) {
+        const fileNameMatches = state.sessions.filter((item) => {
+          const normalizedSessionPath = normalizeFilePath(item.filePath);
+          return getFileName(normalizedSessionPath) === incomingFileName;
+        });
+
+        if (fileNameMatches.length === 1) {
+          matchedSession = fileNameMatches[0];
+        }
+      }
+
+      if (!matchedSession || state.sessionUpdateBadges[matchedSession.id]) {
+        return {};
+      }
+
+      return {
+        sessionUpdateBadges: {
+          ...state.sessionUpdateBadges,
+          [matchedSession.id]: true,
+        },
+      };
+    });
   },
 });

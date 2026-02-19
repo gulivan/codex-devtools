@@ -8,7 +8,7 @@ import { MetricsPill } from './items/MetricsPill';
 import { TextItem } from './items/TextItem';
 import { ThinkingItem } from './items/ThinkingItem';
 
-import type { AIChunk, CodexToolExecution } from '@main/types';
+import type { AIChunk, AIChunkSection, CodexToolExecution } from '@main/types';
 
 interface AIChatGroupProps {
   chunk: AIChunk;
@@ -26,81 +26,141 @@ type ToolExecutionRow =
       execution: CodexToolExecution;
     };
 
-export const AIChatGroup = ({ chunk }: AIChatGroupProps): JSX.Element => {
-  const combinedText = useMemo(() => chunk.textBlocks.join('\n\n').trim(), [chunk.textBlocks]);
-  const toolRows = useMemo(() => {
-    const rows: ToolExecutionRow[] = [];
-    let pendingExecCommands: CodexToolExecution[] = [];
+function buildToolRows(executions: CodexToolExecution[]): ToolExecutionRow[] {
+  const rows: ToolExecutionRow[] = [];
+  let pendingExecCommands: CodexToolExecution[] = [];
 
-    const flushPendingExecCommands = (): void => {
-      if (pendingExecCommands.length === 0) {
-        return;
-      }
+  const flushPendingExecCommands = (): void => {
+    if (pendingExecCommands.length === 0) {
+      return;
+    }
 
-      if (pendingExecCommands.length === 1) {
-        const execution = pendingExecCommands[0];
-        rows.push({
-          type: 'single',
-          key: execution.functionCall.callId,
-          execution,
-        });
-      } else {
-        rows.push({
-          type: 'group',
-          key: `exec-group-${pendingExecCommands[0].functionCall.callId}`,
-          executions: pendingExecCommands,
-        });
-      }
-
-      pendingExecCommands = [];
-    };
-
-    for (const execution of chunk.toolExecutions) {
-      if (isExecCommandExecution(execution)) {
-        pendingExecCommands.push(execution);
-        continue;
-      }
-
-      flushPendingExecCommands();
+    if (pendingExecCommands.length === 1) {
+      const execution = pendingExecCommands[0];
       rows.push({
         type: 'single',
         key: execution.functionCall.callId,
         execution,
       });
+    } else {
+      rows.push({
+        type: 'group',
+        key: `exec-group-${pendingExecCommands[0].functionCall.callId}`,
+        executions: pendingExecCommands,
+      });
+    }
+
+    pendingExecCommands = [];
+  };
+
+  for (const execution of executions) {
+    if (isExecCommandExecution(execution)) {
+      pendingExecCommands.push(execution);
+      continue;
     }
 
     flushPendingExecCommands();
-    return rows;
-  }, [chunk.toolExecutions]);
+    rows.push({
+      type: 'single',
+      key: execution.functionCall.callId,
+      execution,
+    });
+  }
+
+  flushPendingExecCommands();
+  return rows;
+}
+
+export const AIChatGroup = ({ chunk }: AIChatGroupProps): JSX.Element => {
+  const sections = useMemo<AIChunkSection[]>(() => {
+    if (Array.isArray(chunk.sections) && chunk.sections.length > 0) {
+      return chunk.sections;
+    }
+
+    const fallback: AIChunkSection[] = [];
+    if (chunk.textBlocks.length > 0) {
+      fallback.push({
+        type: 'message',
+        textBlocks: chunk.textBlocks,
+      });
+    }
+
+    if (chunk.reasoning.length > 0) {
+      fallback.push({
+        type: 'reasoning',
+        summaries: chunk.reasoning,
+      });
+    }
+
+    if (chunk.toolExecutions.length > 0) {
+      fallback.push({
+        type: 'tool_executions',
+        executions: chunk.toolExecutions,
+      });
+    }
+
+    return fallback;
+  }, [chunk.sections, chunk.textBlocks, chunk.reasoning, chunk.toolExecutions]);
+
+  let hasRenderedToolsTitle = false;
 
   return (
     <article className="chat-ai-card">
       <header className="chat-ai-header">
         <div>
-          <p className="chat-ai-title">Assistant</p>
+          <p className="chat-ai-title">Codex</p>
           <time className="chat-ai-time">{format(new Date(chunk.timestamp), 'p')}</time>
         </div>
         <MetricsPill metrics={chunk.metrics} durationMs={chunk.duration} />
       </header>
 
-      {combinedText ? <TextItem label="Response" markdown={combinedText} defaultExpanded /> : null}
+      {sections.map((section, index) => {
+        if (section.type === 'message') {
+          const markdown = section.textBlocks.join('\n\n').trim();
+          if (!markdown) {
+            return null;
+          }
 
-      {chunk.reasoning.length > 0 ? <ThinkingItem summaries={chunk.reasoning} /> : null}
+          return (
+            <TextItem
+              key={`message-${chunk.timestamp}-${index}`}
+              label="Response"
+              markdown={markdown}
+              defaultExpanded
+            />
+          );
+        }
 
-      {chunk.toolExecutions.length > 0 ? (
-        <section className="chat-tools-section">
-          <h4 className="chat-tools-title">Tool executions</h4>
-          <div className="chat-tools-list">
-            {toolRows.map((row) =>
-              row.type === 'group' ? (
-                <ExecutionTraceGroup key={row.key} executions={row.executions} />
-              ) : (
-                <ExecutionTrace key={row.key} execution={row.execution} />
-              ),
-            )}
-          </div>
-        </section>
-      ) : null}
+        if (section.type === 'reasoning') {
+          if (section.summaries.length === 0) {
+            return null;
+          }
+
+          return <ThinkingItem key={`reasoning-${chunk.timestamp}-${index}`} summaries={section.summaries} />;
+        }
+
+        if (section.executions.length === 0) {
+          return null;
+        }
+
+        const toolRows = buildToolRows(section.executions);
+        const showToolsTitle = !hasRenderedToolsTitle;
+        hasRenderedToolsTitle = true;
+        return (
+          <section key={`tools-${chunk.timestamp}-${index}`} className="chat-tools-section">
+            {showToolsTitle ? <h4 className="chat-tools-title">Tool executions</h4> : null}
+            <div className="chat-tools-list">
+              {toolRows.map((row) =>
+                row.type === 'group' ? (
+                  <ExecutionTraceGroup key={row.key} executions={row.executions} />
+                ) : (
+                  <ExecutionTrace key={row.key} execution={row.execution} />
+                ),
+              )}
+            </div>
+          </section>
+        );
+      })}
     </article>
   );
 };

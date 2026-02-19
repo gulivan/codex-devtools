@@ -162,4 +162,46 @@ describe('CodexSessionParser', () => {
 
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it('parses compacted/compaction entries and context_compacted event messages', async () => {
+    const { dir, filePath } = createTempSessionFile([
+      {
+        type: 'session_meta',
+        timestamp: '2026-02-19T10:08:40.000Z',
+        payload: {
+          id: 'session-compaction',
+          cwd: '/repo/project-c',
+        },
+      },
+      {
+        type: 'compacted',
+        timestamp: '2026-02-19T10:08:56.993Z',
+        payload: {
+          message: '',
+          replacement_history: [],
+        },
+      },
+      {
+        type: 'compaction',
+        timestamp: '2026-02-19T10:08:56.994Z',
+        encrypted_content: 'gAAAAA',
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-19T10:08:56.995Z',
+        payload: {
+          type: 'context_compacted',
+        },
+      },
+    ]);
+
+    const parser = new CodexSessionParser();
+    const parsed = await parser.parseSessionFile(filePath);
+
+    expect(parsed.entries.some((entry) => entry.type === 'compacted')).toBe(true);
+    expect(parsed.entries.some((entry) => entry.type === 'compaction')).toBe(true);
+    expect(parsed.eventMessages.some((entry) => entry.payload.type === 'context_compacted')).toBe(true);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

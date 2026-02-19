@@ -52,6 +52,7 @@ export const DateGroupedSessions = (): JSX.Element => {
     sessionsLoading,
     activeSessionId,
     sessionPreviews,
+    sessionUpdateBadges,
     searchQuery,
     selectSession,
   } = useAppStore((state) => ({
@@ -59,6 +60,7 @@ export const DateGroupedSessions = (): JSX.Element => {
     sessionsLoading: state.sessionsLoading,
     activeSessionId: state.activeSessionId,
     sessionPreviews: state.sessionPreviews,
+    sessionUpdateBadges: state.sessionUpdateBadges,
     searchQuery: state.searchQuery.trim().toLowerCase(),
     selectSession: state.selectSession,
   }));
@@ -100,6 +102,7 @@ export const DateGroupedSessions = (): JSX.Element => {
                 session={session}
                 isActive={session.id === activeSessionId}
                 preview={sessionPreviews[session.id] ?? ''}
+                hasUpdate={Boolean(sessionUpdateBadges[session.id])}
                 onSelect={() => {
                   void selectSession(session.id);
                 }}

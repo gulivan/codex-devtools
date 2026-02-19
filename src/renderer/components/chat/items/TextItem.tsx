@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { MarkdownViewer } from '../viewers/MarkdownViewer';
+import { notifyChatLayoutInvalidated } from '../chatLayoutEvents';
 
 interface TextItemProps {
   label?: string;
@@ -13,7 +14,14 @@ export const TextItem = ({ label = 'Text', markdown, defaultExpanded = false }: 
 
   return (
     <section className="chat-item-panel">
-      <button type="button" className="chat-item-header" onClick={() => setExpanded((value) => !value)}>
+      <button
+        type="button"
+        className="chat-item-header"
+        onClick={() => {
+          setExpanded((value) => !value);
+          notifyChatLayoutInvalidated();
+        }}
+      >
         <span>{label}</span>
         <span className="chat-item-chevron">{expanded ? '▾' : '▸'}</span>
       </button>

@@ -36,6 +36,12 @@ describe('codexBootstrapMessage', () => {
     expect(isCodexBootstrapMessage(content)).toBe(true);
   });
 
+  it('classifies turn aborted action wrapper', () => {
+    const content = '<turn_aborted>the user interrupted the previous turn</turn_aborted>';
+    expect(classifyCodexBootstrapMessage(content)).toBe('turn_aborted');
+    expect(isCodexBootstrapMessage(content)).toBe(true);
+  });
+
   it('does not classify regular user prompts', () => {
     expect(classifyCodexBootstrapMessage('fix sidebar titles')).toBeNull();
     expect(isCodexBootstrapMessage('fix sidebar titles')).toBe(false);

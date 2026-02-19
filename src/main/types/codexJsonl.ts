@@ -183,11 +183,16 @@ export interface UserMessagePayload {
   message: string;
 }
 
+export interface ContextCompactedPayload {
+  type: 'context_compacted';
+}
+
 export type EventMsgPayload =
   | TokenCountPayload
   | AgentReasoningPayload
   | AgentMessagePayload
-  | UserMessagePayload;
+  | UserMessagePayload
+  | ContextCompactedPayload;
 
 export interface EventMsgEntry {
   type: 'event_msg';
@@ -195,11 +200,26 @@ export interface EventMsgEntry {
   payload: EventMsgPayload;
 }
 
+export interface CompactedEntry {
+  type: 'compacted';
+  timestamp: string;
+  payload: Record<string, unknown>;
+}
+
+export interface CompactionEntry {
+  type: 'compaction';
+  timestamp: string;
+  payload?: Record<string, unknown>;
+  encrypted_content?: string | null;
+}
+
 export type CodexLogEntry =
   | SessionMetaEntry
   | ResponseItemEntry
   | TurnContextEntry
-  | EventMsgEntry;
+  | EventMsgEntry
+  | CompactedEntry
+  | CompactionEntry;
 
 export function isContentBlockInputText(value: unknown): value is ContentBlockInputText {
   if (!isRecord(value)) {
@@ -369,12 +389,21 @@ export function isUserMessagePayload(value: unknown): value is UserMessagePayloa
   return value.type === 'user_message' && hasString(value, 'message');
 }
 
+export function isContextCompactedPayload(value: unknown): value is ContextCompactedPayload {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return value.type === 'context_compacted';
+}
+
 export function isEventMsgPayload(value: unknown): value is EventMsgPayload {
   return (
     isTokenCountPayload(value) ||
     isAgentReasoningPayload(value) ||
     isAgentMessagePayload(value) ||
-    isUserMessagePayload(value)
+    isUserMessagePayload(value) ||
+    isContextCompactedPayload(value)
   );
 }
 
@@ -487,11 +516,40 @@ export function isEventMsgEntry(value: unknown): value is EventMsgEntry {
   return isEventMsgPayload(value.payload);
 }
 
+export function isCompactedEntry(value: unknown): value is CompactedEntry {
+  if (!isRecord(value) || value.type !== 'compacted' || !hasString(value, 'timestamp')) {
+    return false;
+  }
+
+  return isRecord(value.payload);
+}
+
+export function isCompactionEntry(value: unknown): value is CompactionEntry {
+  if (!isRecord(value) || value.type !== 'compaction' || !hasString(value, 'timestamp')) {
+    return false;
+  }
+
+  if ('payload' in value && !isRecord(value.payload)) {
+    return false;
+  }
+
+  if (
+    'encrypted_content' in value &&
+    !(isString(value.encrypted_content) || value.encrypted_content === null)
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function isCodexLogEntry(value: unknown): value is CodexLogEntry {
   return (
     isSessionMetaEntry(value) ||
     isResponseItemEntry(value) ||
     isTurnContextEntry(value) ||
-    isEventMsgEntry(value)
+    isEventMsgEntry(value) ||
+    isCompactedEntry(value) ||
+    isCompactionEntry(value)
   );
 }

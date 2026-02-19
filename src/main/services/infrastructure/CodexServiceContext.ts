@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
 import { CodexChunkBuilder } from '@main/services/analysis';
@@ -35,6 +36,7 @@ export interface CodexServiceContextOptions {
 const DETAIL_CACHE_PREFIX = 'detail';
 const CHUNKS_CACHE_PREFIX = 'chunks';
 const SESSIONS_CACHE_PREFIX = 'sessions';
+const UNKNOWN_REVISION = 'unknown-revision';
 
 function extractSearchContent(entry: CodexLogEntry): string {
   if (isResponseItemEntry(entry) && isMessagePayload(entry.payload)) {
@@ -177,15 +179,16 @@ export class CodexServiceContext {
       return null;
     }
 
-    const cacheKey = DataCache.buildKey(DETAIL_CACHE_PREFIX, sessionId);
-    const cached = this.dataCache.get(cacheKey) as CodexParsedSession | undefined;
-    if (cached) {
-      return cached;
-    }
-
     const session = await this.findSessionById(sessionId);
     if (!session) {
       return null;
+    }
+
+    const revision = await this.getSessionFileRevision(session.filePath);
+    const cacheKey = DataCache.buildKey(DETAIL_CACHE_PREFIX, `${sessionId}:${revision}`);
+    const cached = this.dataCache.get(cacheKey) as CodexParsedSession | undefined;
+    if (cached) {
+      return cached;
     }
 
     const parsed = await this.parser.parseSessionFile(session.filePath);
@@ -198,7 +201,13 @@ export class CodexServiceContext {
       return null;
     }
 
-    const cacheKey = DataCache.buildKey(CHUNKS_CACHE_PREFIX, sessionId);
+    const session = await this.findSessionById(sessionId);
+    if (!session) {
+      return null;
+    }
+
+    const revision = await this.getSessionFileRevision(session.filePath);
+    const cacheKey = DataCache.buildKey(CHUNKS_CACHE_PREFIX, `${sessionId}:${revision}`);
     const cached = this.dataCache.get(cacheKey) as CodexChunk[] | undefined;
     if (cached) {
       return cached;
@@ -295,5 +304,14 @@ export class CodexServiceContext {
     const sessions = await this.scanner.scanSessions();
     this.dataCache.set(cacheKey, sessions);
     return sessions;
+  }
+
+  private async getSessionFileRevision(filePath: string): Promise<string> {
+    try {
+      const stats = await fs.stat(filePath);
+      return `${Math.floor(stats.mtimeMs)}:${stats.size}`;
+    } catch {
+      return UNKNOWN_REVISION;
+    }
   }
 }

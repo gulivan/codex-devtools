@@ -6,12 +6,23 @@ import {
   type CodexBootstrapMessageKind,
 } from '@shared/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { Layers } from 'lucide-react';
 
 import { AIChatGroup } from './AIChatGroup';
+import { CHAT_LAYOUT_INVALIDATED_EVENT, notifyChatLayoutInvalidated } from './chatLayoutEvents';
 import { UserChatGroup } from './UserChatGroup';
 
 interface ChatHistoryProps {
   sessionId?: string;
+}
+
+function extractCollaborationModeLabel(content: string): string {
+  const match = content.match(/#\s*Collaboration Mode:\s*([^\n]+)/i);
+  if (!match?.[1]) {
+    return 'unknown';
+  }
+
+  return match[1].trim();
 }
 
 function getPreludeLabel(kind: CodexBootstrapMessageKind): string {
@@ -24,6 +35,17 @@ function getPreludeLabel(kind: CodexBootstrapMessageKind): string {
       return 'Permissions instructions';
     case 'collaboration_mode':
       return 'Collaboration mode';
+    case 'turn_aborted':
+      return 'Turn aborted';
+  }
+}
+
+function getPreludeHint(kind: CodexBootstrapMessageKind): string {
+  switch (kind) {
+    case 'turn_aborted':
+      return 'System action';
+    default:
+      return 'System prelude';
   }
 }
 
@@ -58,6 +80,21 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
 
     return () => cancelAnimationFrame(raf);
   }, [chunks.length, sessionId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const handleLayoutInvalidation = (): void => {
+      rowVirtualizer.measure();
+    };
+
+    window.addEventListener(CHAT_LAYOUT_INVALIDATED_EVENT, handleLayoutInvalidation);
+    return () => {
+      window.removeEventListener(CHAT_LAYOUT_INVALIDATED_EVENT, handleLayoutInvalidation);
+    };
+  }, [rowVirtualizer]);
 
   const hasChunks = chunks.length > 0;
   const isLoading = chunksLoading && chunksSessionId === sessionId;
@@ -151,13 +188,26 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
                 {chunk.type === 'ai' ? <AIChatGroup chunk={chunk} /> : null}
                 {chunk.type === 'system' ? (
                   systemPreludeKind ? (
-                    <details className={`chat-system-prelude ${systemPreludeKind}`}>
-                      <summary className="chat-system-prelude-summary">
-                        <span>{getPreludeLabel(systemPreludeKind)}</span>
-                        <span className="chat-system-prelude-summary-hint">System prelude</span>
-                      </summary>
-                      <pre className="chat-system-prelude-content">{chunk.content}</pre>
-                    </details>
+                    systemPreludeKind === 'collaboration_mode' ? (
+                      <div className="chat-model-change">
+                        <span className="chat-model-change-label">
+                          Collaboration mode: <code>{extractCollaborationModeLabel(chunk.content)}</code>
+                        </span>
+                      </div>
+                    ) : (
+                      <details
+                        className={`chat-system-prelude ${systemPreludeKind}`}
+                        onToggle={notifyChatLayoutInvalidated}
+                      >
+                        <summary className="chat-system-prelude-summary">
+                          <span>{getPreludeLabel(systemPreludeKind)}</span>
+                          <span className="chat-system-prelude-summary-hint">
+                            {getPreludeHint(systemPreludeKind)}
+                          </span>
+                        </summary>
+                        <pre className="chat-system-prelude-content">{chunk.content}</pre>
+                      </details>
+                    )
                   ) : (
                     <div className="chat-system-message">
                       <p>{chunk.content}</p>
@@ -170,6 +220,21 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
                       Model changed: <code>{chunk.previousModel}</code>{' '}
                       <code>{chunk.previousReasoningEffort}</code> -&gt;{' '}
                       <code>{chunk.model}</code> <code>{chunk.reasoningEffort}</code>
+                    </span>
+                  </div>
+                ) : null}
+                {chunk.type === 'collaboration_mode_change' ? (
+                  <div className="chat-model-change">
+                    <span className="chat-model-change-label">
+                      Collaboration mode: <code>{chunk.previousMode}</code> -&gt; <code>{chunk.mode}</code>
+                    </span>
+                  </div>
+                ) : null}
+                {chunk.type === 'compaction' ? (
+                  <div className="chat-compaction-divider">
+                    <span className="chat-compaction-divider-label">
+                      <Layers size={12} aria-hidden="true" />
+                      Context compacted
                     </span>
                   </div>
                 ) : null}
