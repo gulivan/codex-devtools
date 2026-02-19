@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex SDK"
+  short_description: "Build with OpenAI Codex SDK (TypeScript)"
+  default_prompt: "Implement or debug @openai/codex-sdk thread flows, event handling, and options."

@@ -1,0 +1,60 @@
+{
+  "name": "codex-devtools",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Desktop app for inspecting Codex session data",
+  "main": "dist-electron/main/index.cjs",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "standalone": "pnpm build && node dist-electron/main/standalone.cjs"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/static": "^9.0.0",
+    "@tanstack/react-virtual": "^3.10.8",
+    "date-fns": "^3.6.0",
+    "fastify": "^5.7.4",
+    "lucide-react": "^0.562.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/node": "^25.0.7",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.17",
+    "electron": "~40.3.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "eslint": "^9.39.2",
+    "postcss": "^8.4.35",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.2",
+    "vitest": "^3.1.4"
+  },
+  "build": {
+    "appId": "com.codex.devtools",
+    "productName": "codex-devtools",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/renderer/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "dist-electron/main/index.cjs"
+    }
+  },
+  "packageManager": "pnpm@10.25.0"
+}

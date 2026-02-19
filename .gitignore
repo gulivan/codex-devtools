@@ -1,0 +1,15 @@
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+coverage/
+.vite/
+.DS_Store
+*.log
+.env
+.env.local
+*.jsonl
+rollout-*.jsonl
+.codex/
+sessions/

@@ -1,0 +1,75 @@
+# codex-devtools
+
+Desktop app for inspecting Codex session data.
+
+## Prerequisites
+
+- Node.js 20+ (Node 24 works)
+- `pnpm` 10 (via Corepack recommended)
+
+## Build and run
+
+```bash
+cd /Users/ivan/git/codex-devtools
+corepack enable
+pnpm install
+pnpm approve-builds
+```
+
+In `pnpm approve-builds`, approve:
+
+- `electron`
+- `esbuild`
+
+Then start the desktop app in development mode:
+
+```bash
+pnpm dev
+```
+
+## Production build
+
+```bash
+pnpm build
+```
+
+Build artifacts are generated in:
+
+- `dist-electron`
+- `out/renderer`
+
+## Standalone mode
+
+Run as an HTTP server (without launching Electron):
+
+```bash
+pnpm standalone
+```
+
+Default URL:
+
+- `http://localhost:3456`
+
+## Environment variables
+
+- `CODEX_SESSIONS_PATH`: path to Codex sessions directory (default: `~/.codex/sessions`)
+- `HOST`: standalone server host (default: `0.0.0.0`)
+- `PORT`: standalone server port (default: `3456`)
+
+## Scripts
+
+- `pnpm dev`: start Electron app in dev mode
+- `pnpm build`: build renderer + Electron main/preload
+- `pnpm standalone`: build and run standalone HTTP server
+- `pnpm test`: run tests with Vitest
+- `pnpm lint`: run ESLint
+- `pnpm typecheck`: run TypeScript type checks
+
+## Troubleshooting
+
+If `pnpm dev` fails with `Electron failed to install correctly` or `Electron uninstall`:
+
+1. Run `pnpm approve-builds`
+2. Approve `electron` and `esbuild`
+3. Run `pnpm install` again
+4. Retry `pnpm dev`
