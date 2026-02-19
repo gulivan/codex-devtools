@@ -15,6 +15,7 @@ import {
   isReasoningPayload,
   isResponseItemEntry,
   isTokenCountPayload,
+  isTurnContextEntry,
   isUserMessagePayload,
   reasoningSummaryToText,
 } from '@main/types';
@@ -32,12 +33,17 @@ interface InProgressAIChunk {
   eventReasoning: string[];
   metrics: Partial<CodexSessionMetrics>;
   callIndexById: Map<string, { index: number; startTimeMs: number }>;
+  pendingUsageToolIndex: number | null;
 }
 
 interface PendingUserEvent {
   content: string;
   timestamp: string;
+  source: 'response' | 'event';
 }
+
+const IMAGE_TAG_PATTERN = /<\/?image\b[^>]*>/gi;
+const IMAGE_PLACEHOLDER_PATTERN = /\[Image #\d+\]/gi;
 
 function parseTimestampMs(timestamp: string): number {
   const ms = new Date(timestamp).getTime();
@@ -46,6 +52,69 @@ function parseTimestampMs(timestamp: string): number {
 
 function normalizeComparableText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function sanitizeUserText(value: string): string {
+  return value
+    .replace(IMAGE_TAG_PATTERN, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function countImagePlaceholders(value: string): number {
+  const matches = sanitizeUserText(value).match(IMAGE_PLACEHOLDER_PATTERN);
+  return matches?.length ?? 0;
+}
+
+function normalizeUserTextWithoutImagePlaceholders(value: string): string {
+  return normalizeComparableText(
+    sanitizeUserText(value).replace(IMAGE_PLACEHOLDER_PATTERN, ' '),
+  );
+}
+
+function isEquivalentUserContent(left: string, right: string): boolean {
+  const normalizedLeft = normalizeComparableText(sanitizeUserText(left));
+  const normalizedRight = normalizeComparableText(sanitizeUserText(right));
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+
+  const textOnlyLeft = normalizeUserTextWithoutImagePlaceholders(left);
+  const textOnlyRight = normalizeUserTextWithoutImagePlaceholders(right);
+  if (textOnlyLeft && textOnlyLeft === textOnlyRight) {
+    return true;
+  }
+
+  if (!textOnlyLeft && !textOnlyRight) {
+    const placeholderCountLeft = countImagePlaceholders(left);
+    const placeholderCountRight = countImagePlaceholders(right);
+    return placeholderCountLeft > 0 && placeholderCountLeft === placeholderCountRight;
+  }
+
+  return false;
+}
+
+function pickPreferredEquivalentUserContent(
+  pending: PendingUserEvent,
+  incoming: PendingUserEvent,
+): PendingUserEvent {
+  const pendingPlaceholderCount = countImagePlaceholders(pending.content);
+  const incomingPlaceholderCount = countImagePlaceholders(incoming.content);
+  if (incomingPlaceholderCount !== pendingPlaceholderCount) {
+    return incomingPlaceholderCount > pendingPlaceholderCount ? incoming : pending;
+  }
+
+  if (pending.source === 'event' && incoming.source === 'response') {
+    return incoming;
+  }
+
+  return pending;
+}
+
+function normalizeModel(model: string | undefined): string {
+  return model?.trim() ?? '';
 }
 
 function pushUniqueAdjacent(blocks: string[], value: string): void {
@@ -71,13 +140,35 @@ function pickPreferredBlocks(primary: string[], fallback: string[]): string[] {
   return deduped;
 }
 
+function mergePendingUser(
+  chunks: CodexChunk[],
+  pending: PendingUserEvent | null,
+  incoming: PendingUserEvent,
+): PendingUserEvent {
+  if (!pending) {
+    return incoming;
+  }
+
+  const sameText = isEquivalentUserContent(pending.content, incoming.content);
+  if (sameText) {
+    return pickPreferredEquivalentUserContent(pending, incoming);
+  }
+
+  chunks.push({
+    type: 'user',
+    content: pending.content,
+    timestamp: pending.timestamp,
+  });
+  return incoming;
+}
+
 function toUserContent(entry: CodexLogEntry): string {
   if (isResponseItemEntry(entry) && isMessagePayload(entry.payload) && entry.payload.role === 'user') {
-    return entry.payload.content.map(getContentBlockText).filter(Boolean).join('\n');
+    return sanitizeUserText(entry.payload.content.map(getContentBlockText).filter(Boolean).join('\n'));
   }
 
   if (isEventMsgEntry(entry) && isUserMessagePayload(entry.payload)) {
-    return entry.payload.message;
+    return sanitizeUserText(entry.payload.message);
   }
 
   return '';
@@ -126,7 +217,8 @@ export class CodexChunkBuilder {
     );
     const chunks: CodexChunk[] = [];
     let currentAI: InProgressAIChunk | null = null;
-    let pendingEventUser: PendingUserEvent | null = null;
+    let pendingUser: PendingUserEvent | null = null;
+    let lastSeenModel: string | null = null;
 
     const flushAIChunk = (): void => {
       if (!currentAI) {
@@ -178,48 +270,66 @@ export class CodexChunkBuilder {
         eventReasoning: [],
         metrics: {},
         callIndexById: new Map(),
+        pendingUsageToolIndex: null,
       };
       return currentAI;
     };
 
     const flushPendingEventUser = (): void => {
-      if (!pendingEventUser) {
+      if (!pendingUser) {
         return;
       }
 
       chunks.push({
         type: 'user',
-        content: pendingEventUser.content,
-        timestamp: pendingEventUser.timestamp,
+        content: pendingUser.content,
+        timestamp: pendingUser.timestamp,
       });
-      pendingEventUser = null;
+      pendingUser = null;
     };
 
     for (const entry of sortedEntries) {
       const timestampMs = parseTimestampMs(entry.timestamp);
 
+      if (isTurnContextEntry(entry)) {
+        const model = normalizeModel(entry.payload.model);
+        if (!model) {
+          continue;
+        }
+
+        if (lastSeenModel === null) {
+          lastSeenModel = model;
+          continue;
+        }
+
+        if (lastSeenModel === model) {
+          continue;
+        }
+
+        flushPendingEventUser();
+        flushAIChunk();
+        chunks.push({
+          type: 'model_change',
+          previousModel: lastSeenModel,
+          model,
+          timestamp: entry.timestamp,
+        });
+        lastSeenModel = model;
+        continue;
+      }
+
       if (isEventMsgEntry(entry) && isUserMessagePayload(entry.payload)) {
         flushAIChunk();
-        const content = entry.payload.message.trim();
+        const content = sanitizeUserText(entry.payload.message);
         if (!content) {
           continue;
         }
 
-        if (pendingEventUser) {
-          const isDuplicate = normalizeComparableText(pendingEventUser.content) === normalizeComparableText(content);
-          if (!isDuplicate) {
-            chunks.push({
-              type: 'user',
-              content: pendingEventUser.content,
-              timestamp: pendingEventUser.timestamp,
-            });
-          }
-        }
-
-        pendingEventUser = {
+        pendingUser = mergePendingUser(chunks, pendingUser, {
           content,
           timestamp: entry.timestamp,
-        };
+          source: 'event',
+        });
         continue;
       }
 
@@ -229,26 +339,13 @@ export class CodexChunkBuilder {
         flushAIChunk();
         const content = toUserContent(entry).trim();
         if (!content) {
-          pendingEventUser = null;
           continue;
         }
 
-        if (pendingEventUser) {
-          const isDuplicate = normalizeComparableText(pendingEventUser.content) === normalizeComparableText(content);
-          if (!isDuplicate) {
-            chunks.push({
-              type: 'user',
-              content: pendingEventUser.content,
-              timestamp: pendingEventUser.timestamp,
-            });
-          }
-          pendingEventUser = null;
-        }
-
-        chunks.push({
-          type: 'user',
+        pendingUser = mergePendingUser(chunks, pendingUser, {
           content,
           timestamp: entry.timestamp,
+          source: 'response',
         });
         continue;
       }
@@ -287,7 +384,9 @@ export class CodexChunkBuilder {
           },
           functionOutput: null,
           duration: 0,
+          tokenUsage: null,
         };
+        ai.pendingUsageToolIndex = ai.toolExecutions.length;
         ai.callIndexById.set(entry.payload.call_id, {
           index: ai.toolExecutions.length,
           startTimeMs: timestampMs,
@@ -319,6 +418,7 @@ export class CodexChunkBuilder {
               isError: parseToolOutputError(entry.payload.output),
             },
             duration: 0,
+            tokenUsage: null,
           });
         }
         continue;
@@ -343,6 +443,7 @@ export class CodexChunkBuilder {
 
       if (isEventMsgEntry(entry) && isTokenCountPayload(entry.payload)) {
         this.accumulateMetricsFromTokenEvent(ai.metrics, entry);
+        this.assignTokenUsageToPendingTool(ai, entry);
       }
     }
 
@@ -365,5 +466,34 @@ export class CodexChunkBuilder {
     target.outputTokens = (target.outputTokens ?? 0) + usage.output_tokens;
     target.reasoningTokens = (target.reasoningTokens ?? 0) + usage.reasoning_output_tokens;
     target.totalTokens = (target.totalTokens ?? 0) + usage.total_tokens;
+  }
+
+  private assignTokenUsageToPendingTool(ai: InProgressAIChunk, entry: EventMsgEntry): void {
+    if (!isTokenCountPayload(entry.payload) || !entry.payload.info) {
+      return;
+    }
+
+    if (ai.pendingUsageToolIndex === null) {
+      return;
+    }
+
+    const tool = ai.toolExecutions[ai.pendingUsageToolIndex];
+    if (!tool) {
+      ai.pendingUsageToolIndex = null;
+      return;
+    }
+
+    const usage = entry.payload.info.last_token_usage;
+    if (tool.tokenUsage) {
+      tool.tokenUsage.inputTokens += usage.input_tokens;
+      tool.tokenUsage.outputTokens += usage.output_tokens;
+    } else {
+      tool.tokenUsage = {
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+      };
+    }
+
+    ai.pendingUsageToolIndex = null;
   }
 }
