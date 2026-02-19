@@ -14,6 +14,7 @@ on:
           - major
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -78,6 +79,16 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "${NEXT_TAG}" -m "Release ${NEXT_TAG}"
           git push origin "${NEXT_TAG}"
+
+      - name: Trigger release workflows for new tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          NEXT_TAG="${{ steps.next_tag.outputs.tag }}"
+          gh workflow run "Release" --ref "${NEXT_TAG}"
+          gh workflow run "NPM Publish" --ref "${NEXT_TAG}"
 
       - name: Summary
         run: |
