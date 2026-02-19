@@ -9,10 +9,24 @@ import { IPC_CHANNELS } from '@preload/constants/channels';
 import { createLogger } from '@shared/utils/logger';
 
 const logger = createLogger('Main');
+const APP_DISPLAY_NAME = 'codex-devtools';
 
 let mainWindow: BrowserWindow | null = null;
 let serviceContext: CodexServiceContext | null = null;
 let removeFileChangeListener: (() => void) | null = null;
+
+function resolveAppIconPath(): string | undefined {
+  const candidates = [
+    join(process.cwd(), 'resources/logo.png'),
+    join(process.cwd(), 'resources/icon.png'),
+    join(__dirname, '../../resources/logo.png'),
+    join(__dirname, '../../resources/icon.png'),
+    join(process.resourcesPath, 'resources/logo.png'),
+    join(process.resourcesPath, 'resources/icon.png'),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
 
 function getRendererIndexPath(): string {
   const candidates = [
@@ -24,9 +38,12 @@ function getRendererIndexPath(): string {
 }
 
 const createWindow = (): BrowserWindow => {
+  const iconPath = resolveAppIconPath();
   const window = new BrowserWindow({
+    title: APP_DISPLAY_NAME,
     width: 1200,
     height: 800,
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -84,7 +101,14 @@ function disposeServices(): void {
   }
 }
 
+app.setName(APP_DISPLAY_NAME);
+
 void app.whenReady().then(() => {
+  const iconPath = resolveAppIconPath();
+  if (iconPath && process.platform === 'darwin' && app.dock) {
+    app.dock.setIcon(iconPath);
+  }
+
   initializeServices();
   mainWindow = createWindow();
 
