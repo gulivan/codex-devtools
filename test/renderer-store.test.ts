@@ -351,7 +351,7 @@ describe('renderer store', () => {
 
     const cleanup = initializeEventListeners(store, api);
 
-    vi.advanceTimersByTime(1_600);
+    vi.advanceTimersToNextTimer();
     await Promise.resolve();
     await Promise.resolve();
 
