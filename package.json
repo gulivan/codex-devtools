@@ -17,7 +17,11 @@
     "url": "https://github.com/gulivan/codex-devtools/issues"
   },
   "main": "dist-electron/main/index.cjs",
+  "bin": {
+    "codex-devtools": "bin/codex-devtools.cjs"
+  },
   "files": [
+    "bin/**",
     "dist-electron/**",
     "out/renderer/**",
     "README.md"
@@ -85,7 +89,9 @@
     "extraMetadata": {
       "main": "dist-electron/main/index.cjs"
     },
+    "icon": "resources/icon.png",
     "mac": {
+      "icon": "resources/icon.icns",
       "category": "public.app-category.developer-tools",
       "target": [
         "dmg",

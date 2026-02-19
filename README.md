@@ -1,117 +1,124 @@
-# codex-devtools
+<p align="center">
+  <img src="resources/logo.png" width="120" alt="codex-devtools logo" />
+</p>
 
-Desktop app for inspecting Codex session data.
+<h1 align="center">codex-devtools</h1>
 
-## Prerequisites
+<p align="center">
+  Desktop inspector for <a href="https://github.com/openai/codex">Codex</a> session data.
+  <br />
+  Browse conversations, search messages, and analyze agent activity across sessions.
+</p>
 
-- Node.js 20+ (Node 24 works)
-- `pnpm` 10 (via Corepack recommended)
+<p align="center">
+  <a href="https://www.npmjs.com/package/codex-devtools"><img src="https://img.shields.io/npm/v/codex-devtools" alt="npm version" /></a>
+  <a href="https://github.com/gulivan/codex-devtools/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/codex-devtools" alt="license" /></a>
+</p>
 
-## Build and run
+---
+
+## Quick start
+
+> Requires **Node.js 20+** and **pnpm 10** (Corepack recommended).
 
 ```bash
-cd /Users/ivan/git/codex-devtools
+git clone https://github.com/gulivan/codex-devtools.git
+cd codex-devtools
 corepack enable
 pnpm install
-pnpm approve-builds
+pnpm approve-builds   # approve electron and esbuild
+pnpm dev              # launch Electron app in dev mode
 ```
 
-In `pnpm approve-builds`, approve:
-
-- `electron`
-- `esbuild`
-
-Then start the desktop app in development mode:
+Or run instantly via npm without cloning:
 
 ```bash
-pnpm dev
+npx codex-devtools
+# or
+bunx codex-devtools
 ```
 
-## Production build
-
-```bash
-pnpm build
-```
-
-Build artifacts are generated in:
-
-- `dist-electron`
-- `out/renderer`
-
-Create desktop installers/packages locally:
-
-```bash
-pnpm dist
-```
-
-Platform-specific package commands:
-
-- `pnpm dist:mac` (macOS: `.dmg`, `.zip`)
-- `pnpm dist:win` (Windows: NSIS installer)
-- `pnpm dist:linux` (Linux: AppImage, `.deb`, `.rpm`)
+This starts a standalone HTTP server at `http://localhost:3456`.
 
 ## Standalone mode
 
-Run as an HTTP server (without launching Electron):
+Run as an HTTP server without Electron:
 
 ```bash
 pnpm standalone
 ```
 
-Default URL:
+Opens at `http://localhost:3456` by default.
 
-- `http://localhost:3456`
+## Production build
+
+```bash
+pnpm build            # compile renderer + main/preload
+pnpm dist             # create installers for all platforms
+```
+
+Platform-specific:
+
+| Command | Output |
+|---------|--------|
+| `pnpm dist:mac` | `.dmg`, `.zip` |
+| `pnpm dist:win` | NSIS installer |
+| `pnpm dist:linux` | AppImage, `.deb`, `.rpm` |
+
+Build artifacts land in `release/`.
 
 ## Environment variables
 
-- `CODEX_SESSIONS_PATH`: path to Codex sessions directory (default: `~/.codex/sessions`)
-- `HOST`: standalone server host (default: `0.0.0.0`)
-- `PORT`: standalone server port (default: `3456`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CODEX_SESSIONS_PATH` | `~/.codex/sessions` | Path to Codex sessions directory |
+| `HOST` | `0.0.0.0` | Standalone server host |
+| `PORT` | `3456` | Standalone server port |
 
 ## Scripts
 
-- `pnpm dev`: start Electron app in dev mode
-- `pnpm build`: build renderer + Electron main/preload
-- `pnpm dist`: build macOS + Windows + Linux packages
-- `pnpm dist:mac`: build macOS packages
-- `pnpm dist:win`: build Windows installer
-- `pnpm dist:linux`: build Linux packages
-- `pnpm standalone`: build and run standalone HTTP server
-- `pnpm test`: run tests with Vitest
-- `pnpm lint`: run ESLint
-- `pnpm typecheck`: run TypeScript type checks
+| Script | Description |
+|--------|-------------|
+| `pnpm dev` | Electron app in dev mode |
+| `pnpm build` | Build renderer + Electron main/preload |
+| `pnpm standalone` | Build and run standalone HTTP server |
+| `pnpm dist` | Package for macOS + Windows + Linux |
+| `pnpm dist:mac` | Package for macOS |
+| `pnpm dist:win` | Package for Windows |
+| `pnpm dist:linux` | Package for Linux |
+| `pnpm test` | Run tests (Vitest) |
+| `pnpm lint` | Run ESLint |
+| `pnpm typecheck` | TypeScript type checks |
 
 ## CI/CD
 
-- `.github/workflows/ci.yml`: typecheck/lint/build/test on `main` and PRs.
-- `.github/workflows/release.yml`: cross-platform packaging on semver tags (`v*`) and manual dispatch.
-- `.github/workflows/npm-publish.yml`: npm publish on semver tags (`v*`) and manual dispatch.
+| Workflow | Trigger | Action |
+|----------|---------|--------|
+| `ci.yml` | Push to `main`, PRs | Typecheck, lint, build, test |
+| `release.yml` | Semver tags (`v*`), manual | Cross-platform packaging |
+| `npm-publish.yml` | Semver tags (`v*`), manual | Publish to npm |
 
-Required GitHub repository secret for npm publishing:
+Required secret: `NPM_TOKEN` (npm automation token with publish + 2FA bypass).
 
-- `NPM_TOKEN`: npm automation token (or granular token with publish + 2FA bypass).
-
-## Versioning (SemVer)
-
-Releases use semantic version tags:
-
-- `vMAJOR.MINOR.PATCH` (example: `v0.1.1`)
-- optional pre-release/build metadata (`v1.2.3-beta.1`, `v1.2.3+build.4`)
-
-Tag and publish flow:
+## Releasing
 
 ```bash
-npm version patch
+npm version patch     # bumps version and creates git tag
 git push origin main --follow-tags
 ```
 
-`release.yml` and `npm-publish.yml` validate tag format and fail if the tag is not valid SemVer.
+Tags must be valid semver (`vMAJOR.MINOR.PATCH`). Pre-release metadata supported (`v1.2.3-beta.1`).
 
 ## Troubleshooting
 
-If `pnpm dev` fails with `Electron failed to install correctly` or `Electron uninstall`:
+**`Electron failed to install correctly`**
 
-1. Run `pnpm approve-builds`
-2. Approve `electron` and `esbuild`
-3. Run `pnpm install` again
-4. Retry `pnpm dev`
+```bash
+pnpm approve-builds   # approve electron and esbuild
+pnpm install
+pnpm dev
+```
+
+## License
+
+[MIT](LICENSE)
