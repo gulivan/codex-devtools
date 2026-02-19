@@ -105,6 +105,7 @@ Build artifacts land in `release/`.
 | Workflow | Trigger | Action |
 |----------|---------|--------|
 | `ci.yml` | Push to `main`, PRs | Typecheck, lint, build, test |
+| `cut-release-tag.yml` | Successful `CI` on `main`, manual dispatch | Compute next semver tag and trigger release publish workflows |
 | `release.yml` | Semver tags (`v*`), manual | Cross-platform packaging |
 | `npm-publish.yml` | Semver tags (`v*`), manual | Publish to npm |
 
@@ -112,9 +113,18 @@ Required secret: `NPM_TOKEN` (npm automation token with publish + 2FA bypass).
 
 ## Releasing
 
+Release tags are cut automatically after `CI` succeeds on `main`.
+
+Automatic bump rules (Conventional Commit aware):
+
+- `major`: any commit subject with `!` (for example `feat!: ...`) or body with `BREAKING CHANGE:`
+- `minor`: at least one `feat:`
+- `patch`: `fix:`, `perf:`, `revert:`, or fallback when no release type is detected
+
+Manual override:
+
 ```bash
-npm version patch     # bumps version and creates git tag
-git push origin main --follow-tags
+gh workflow run "Cut Release Tag" --ref main -f bump=major
 ```
 
 Tags must be valid semver (`vMAJOR.MINOR.PATCH`). Pre-release metadata supported (`v1.2.3-beta.1`).

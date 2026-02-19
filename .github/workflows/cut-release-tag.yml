@@ -10,10 +10,11 @@ on:
     inputs:
       bump:
         description: SemVer bump type
-        required: true
-        default: patch
+        required: false
+        default: auto
         type: choice
         options:
+          - auto
           - patch
           - minor
           - major
@@ -44,7 +45,7 @@ jobs:
       - name: Compute next version tag
         id: next_tag
         env:
-          BUMP: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'patch' }}
+          BUMP: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bump || 'auto' }}
           TARGET_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         shell: bash
         run: |
@@ -67,7 +68,39 @@ jobs:
           VERSION="${LATEST_TAG#v}"
           IFS='.' read -r MAJOR MINOR PATCH <<<"${VERSION}"
 
-          case "${BUMP}" in
+          EFFECTIVE_BUMP="${BUMP}"
+          BUMP_REASON="Manual bump input"
+
+          if [[ "${BUMP}" == "auto" ]]; then
+            RANGE_SPEC="${LATEST_TAG}..${TARGET_SHA}"
+            if [[ "${LATEST_TAG}" == "v0.0.0" ]]; then
+              RANGE_SPEC="${TARGET_SHA}"
+            elif ! git merge-base --is-ancestor "${LATEST_TAG}" "${TARGET_SHA}"; then
+              RANGE_SPEC="${TARGET_SHA}"
+            fi
+
+            SUBJECTS="$(git log --format='%s' ${RANGE_SPEC} || true)"
+            BODIES="$(git log --format='%b' ${RANGE_SPEC} || true)"
+
+            if [[ -z "${SUBJECTS}" ]]; then
+              EFFECTIVE_BUMP="patch"
+              BUMP_REASON="No commit subjects found in range; defaulted to patch"
+            elif grep -Eq '^[a-zA-Z]+(\([^)]+\))?!:' <<<"${SUBJECTS}" || grep -Eq 'BREAKING CHANGE:|BREAKING-CHANGE:' <<<"${BODIES}"; then
+              EFFECTIVE_BUMP="major"
+              BUMP_REASON="Detected breaking changes in commit messages"
+            elif grep -Eq '^feat(\([^)]+\))?:' <<<"${SUBJECTS}"; then
+              EFFECTIVE_BUMP="minor"
+              BUMP_REASON="Detected feat commits"
+            elif grep -Eq '^(fix|perf|revert)(\([^)]+\))?:' <<<"${SUBJECTS}"; then
+              EFFECTIVE_BUMP="patch"
+              BUMP_REASON="Detected fix/perf/revert commits"
+            else
+              EFFECTIVE_BUMP="patch"
+              BUMP_REASON="No release commit type found; defaulted to patch"
+            fi
+          fi
+
+          case "${EFFECTIVE_BUMP}" in
             patch)
               PATCH=$((PATCH + 1))
               ;;
@@ -81,7 +114,7 @@ jobs:
               PATCH=0
               ;;
             *)
-              echo "Unsupported bump type: ${BUMP}"
+              echo "Unsupported bump type: ${EFFECTIVE_BUMP}"
               exit 1
               ;;
           esac
@@ -95,6 +128,8 @@ jobs:
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
           echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+          echo "bump=${EFFECTIVE_BUMP}" >> "$GITHUB_OUTPUT"
+          echo "bump_reason=${BUMP_REASON}" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
         if: steps.next_tag.outputs.skip != 'true'
@@ -124,3 +159,5 @@ jobs:
         run: |
           echo "Created tag: ${{ steps.next_tag.outputs.tag }}"
           echo "Previous tag: ${{ steps.next_tag.outputs.latest_tag }}"
+          echo "Bump: ${{ steps.next_tag.outputs.bump }}"
+          echo "Reason: ${{ steps.next_tag.outputs.bump_reason }}"
