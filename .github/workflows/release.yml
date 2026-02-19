@@ -247,6 +247,22 @@ jobs:
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes
           fi
 
+          uploaded=0
           while IFS= read -r -d '' file; do
-            gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+            base="$(basename "$file")"
+            case "$base" in
+              *.dmg|*.zip|*.exe|*.msi|*.AppImage|*.deb|*.rpm|*.snap|*.nupkg|*.blockmap|latest*.yml|latest*.yaml|latest*.json)
+                if [[ "$base" == "builder-debug.yml" || "$base" == "builder-effective-config.yaml" ]]; then
+                  continue
+                fi
+                gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+                uploaded=$((uploaded + 1))
+                ;;
+            esac
           done < <(find release-artifacts -type f -print0)
+
+          if [[ "$uploaded" -eq 0 ]]; then
+            echo "No distributable release assets found in release-artifacts/"
+            find release-artifacts -type f -print
+            exit 1
+          fi
