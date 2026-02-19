@@ -1,0 +1,85 @@
+name: Cut Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: SemVer bump type
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+jobs:
+  cut-tag:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version tag
+        id: next_tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LATEST_TAG="$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)"
+          if [[ -z "${LATEST_TAG}" ]]; then
+            LATEST_TAG="v0.0.0"
+          fi
+
+          VERSION="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<<"${VERSION}"
+
+          BUMP="${{ github.event.inputs.bump }}"
+          case "${BUMP}" in
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            *)
+              echo "Unsupported bump type: ${BUMP}"
+              exit 1
+              ;;
+          esac
+
+          NEXT_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          if git rev-parse "${NEXT_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${NEXT_TAG} already exists."
+            exit 1
+          fi
+
+          echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          NEXT_TAG="${{ steps.next_tag.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${NEXT_TAG}" -m "Release ${NEXT_TAG}"
+          git push origin "${NEXT_TAG}"
+
+      - name: Summary
+        run: |
+          echo "Created tag: ${{ steps.next_tag.outputs.tag }}"
+          echo "Previous tag: ${{ steps.next_tag.outputs.latest_tag }}"
