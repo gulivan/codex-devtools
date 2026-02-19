@@ -93,6 +93,7 @@ function runDesktop() {
   const child = spawn(electronBinary, [APP_ROOT, ...forwardedArgs], {
     stdio: 'inherit',
     env: process.env,
+    argv0: APP_DISPLAY_NAME,
   });
 
   child.on('error', (error) => {

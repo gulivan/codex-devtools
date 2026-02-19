@@ -1,4 +1,4 @@
-import type { RendererApi } from '@renderer/api';
+import { isElectronMode, type RendererApi } from '@renderer/api';
 import type { CodexChunk, CodexSession } from '@main/types';
 import { isCodexBootstrapMessage } from '@shared/utils';
 import { createLogger } from '@shared/utils/logger';
@@ -8,6 +8,7 @@ import type { AppState } from '../types';
 
 const logger = createLogger('Store:sessionSlice');
 const PREVIEW_PREFETCH_LIMIT = 25;
+const DEFAULT_PREFETCH_PREVIEWS = isElectronMode();
 
 function normalizeFilePath(value: string): string {
   return value.trim().replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -85,7 +86,7 @@ export const createSessionSlice = (
       return;
     }
 
-    const shouldPrefetchPreviews = options?.prefetchPreviews ?? true;
+    const shouldPrefetchPreviews = options?.prefetchPreviews ?? DEFAULT_PREFETCH_PREVIEWS;
     const isBackgroundRefresh = options?.background ?? false;
     if (!isBackgroundRefresh) {
       set({ sessionsLoading: true, sessionsError: null });

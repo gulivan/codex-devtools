@@ -145,11 +145,21 @@ describe('renderer store', () => {
     api.getSessionChunks = vi.fn(async () => previewChunks);
 
     const store = createAppStore(api);
-    await store.getState().fetchSessions('/repo/a');
+    await store.getState().fetchSessions('/repo/a', { prefetchPreviews: true });
     await Promise.resolve();
     await Promise.resolve();
 
     expect(store.getState().sessionPreviews['session-1']).toBe('show real prompt title in sidebar');
+  });
+
+  it('does not prefetch session previews by default in web mode', async () => {
+    const api = createApiMock();
+    const store = createAppStore(api);
+
+    await store.getState().fetchSessions('/repo/a');
+
+    expect(api.getSessionChunks).not.toHaveBeenCalled();
+    expect(store.getState().sessionPreviews).toEqual({});
   });
 
   it('uses dark theme before config is fetched', () => {
@@ -168,7 +178,7 @@ describe('renderer store', () => {
     });
 
     const store = createAppStore(api);
-    await store.getState().fetchSessions('/repo/a');
+    await store.getState().fetchSessions('/repo/a', { prefetchPreviews: true });
     await Promise.resolve();
     await Promise.resolve();
 

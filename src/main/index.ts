@@ -102,6 +102,7 @@ function disposeServices(): void {
 }
 
 app.setName(APP_DISPLAY_NAME);
+process.title = APP_DISPLAY_NAME;
 
 void app.whenReady().then(() => {
   const iconPath = resolveAppIconPath();

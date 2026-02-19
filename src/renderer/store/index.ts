@@ -29,7 +29,7 @@ interface StoreAccess {
 }
 
 const REFRESH_DEBOUNCE_MS = 120;
-const FALLBACK_POLL_INTERVAL_MS = 15000;
+const FALLBACK_POLL_INTERVAL_MS = 5000;
 
 export function initializeEventListeners(
   store: StoreAccess = useAppStore,
