@@ -251,8 +251,15 @@ jobs:
           while IFS= read -r -d '' file; do
             base="$(basename "$file")"
             case "$base" in
-              *.dmg|*.zip|*.exe|*.msi|*.AppImage|*.deb|*.rpm|*.snap|*.nupkg|*.blockmap|latest*.yml|latest*.yaml|latest*.json)
+              *.dmg|*.zip|*.msi|*.AppImage|*.deb|*.rpm|*.snap|*.nupkg|*.blockmap|latest*.yml|latest*.yaml|latest*.json)
                 if [[ "$base" == "builder-debug.yml" || "$base" == "builder-effective-config.yaml" ]]; then
+                  continue
+                fi
+                gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
+                uploaded=$((uploaded + 1))
+                ;;
+              *.exe)
+                if [[ "$base" != *Setup*.exe ]]; then
                   continue
                 fi
                 gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber
