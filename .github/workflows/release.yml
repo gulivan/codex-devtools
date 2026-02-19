@@ -62,6 +62,12 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           pnpm pkg set version="$VERSION"
 
+      - name: Prepare package manifest for electron-builder
+        shell: bash
+        run: |
+          pnpm pkg delete dependencies.electron
+          pnpm pkg set devDependencies.electron="~40.3.0"
+
       - name: Build app (macOS ${{ matrix.arch }})
         run: pnpm build
 
@@ -123,6 +129,12 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           pnpm pkg set version="$VERSION"
+
+      - name: Prepare package manifest for electron-builder
+        shell: bash
+        run: |
+          pnpm pkg delete dependencies.electron
+          pnpm pkg set devDependencies.electron="~40.3.0"
 
       - name: Build app (Windows)
         run: pnpm build
@@ -187,6 +199,12 @@ jobs:
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           pnpm pkg set version="$VERSION"
+
+      - name: Prepare package manifest for electron-builder
+        shell: bash
+        run: |
+          pnpm pkg delete dependencies.electron
+          pnpm pkg set devDependencies.electron="~40.3.0"
 
       - name: Build app (Linux)
         run: pnpm build
