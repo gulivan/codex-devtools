@@ -257,11 +257,21 @@ describe('CodexChunkBuilder', () => {
     const chunks = builder.buildChunks(entries);
 
     expect(chunks).toHaveLength(2);
-    expect(chunks[0]).toEqual({
-      type: 'user',
-      content: '[Image #1]\n\nwhy the model in sidebar is unknown?',
-      timestamp: '2026-02-19T07:50:08.225Z',
+    expect(chunks[0].type).toBe('user');
+    if (chunks[0].type !== 'user') {
+      throw new Error('Expected user chunk');
+    }
+
+    expect(chunks[0].content).toBe('[Image #1]\n\nwhy the model in sidebar is unknown?');
+    expect(chunks[0].timestamp).toBe('2026-02-19T07:50:08.225Z');
+    expect(chunks[0].attachments).toHaveLength(1);
+    expect(chunks[0].attachments?.[0]).toMatchObject({
+      source: 'response_item',
+      mimeType: 'image/png',
+      kind: 'image',
+      previewable: true,
     });
+    expect(chunks[0].attachments?.[0]?.dataUrl?.startsWith('data:image/png;base64,')).toBe(true);
 
     if (chunks[1].type !== 'ai') {
       throw new Error('Expected AI chunk');
@@ -308,10 +318,17 @@ describe('CodexChunkBuilder', () => {
     const chunks = builder.buildChunks(entries);
 
     expect(chunks).toHaveLength(2);
-    expect(chunks[0]).toEqual({
-      type: 'user',
-      content: 'check git diff and review code\n[Image #1]',
-      timestamp: '2026-02-18T22:39:16.888Z',
+    expect(chunks[0].type).toBe('user');
+    if (chunks[0].type !== 'user') {
+      throw new Error('Expected user chunk');
+    }
+
+    expect(chunks[0].content).toBe('check git diff and review code\n[Image #1]');
+    expect(chunks[0].timestamp).toBe('2026-02-18T22:39:16.888Z');
+    expect(chunks[0].attachments).toHaveLength(1);
+    expect(chunks[0].attachments?.[0]).toMatchObject({
+      kind: 'image',
+      previewable: true,
     });
 
     if (chunks[1].type !== 'ai') {
@@ -319,6 +336,74 @@ describe('CodexChunkBuilder', () => {
     }
 
     expect(chunks[1].textBlocks).toEqual(['Starting review.']);
+  });
+
+  it('classifies base64 attachment previews by MIME, size, and binary status', () => {
+    const oversizedBase64 = 'A'.repeat(2_900_000);
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T01:00:00.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'inspect attachments' },
+            { type: 'input_image', image_url: 'data:text/plain;base64,aGVsbG8gd29ybGQ=' },
+            { type: 'input_image', image_url: 'data:application/json;base64,eyJhIjoxfQ==' },
+            { type: 'input_image', image_url: 'data:application/octet-stream;base64,AQID' },
+            { type: 'input_image', image_url: `data:image/png;base64,${oversizedBase64}` },
+          ],
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-20T01:00:01.000Z',
+        payload: {
+          type: 'agent_message',
+          message: 'done',
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks[0]?.type).toBe('user');
+    if (chunks[0]?.type !== 'user') {
+      throw new Error('Expected user chunk');
+    }
+
+    expect(chunks[0].attachments).toHaveLength(4);
+    const attachments = chunks[0].attachments ?? [];
+
+    expect(attachments[0]).toMatchObject({
+      mimeType: 'text/plain',
+      kind: 'text',
+      previewable: true,
+      textContent: 'hello world',
+    });
+
+    expect(attachments[1]).toMatchObject({
+      mimeType: 'application/json',
+      kind: 'code',
+      previewable: true,
+    });
+    expect(attachments[1]?.textContent).toContain('"a":1');
+
+    expect(attachments[2]).toMatchObject({
+      mimeType: 'application/octet-stream',
+      kind: 'binary',
+      previewable: false,
+      previewReason: 'binary',
+    });
+
+    expect(attachments[3]).toMatchObject({
+      mimeType: 'image/png',
+      kind: 'image',
+      previewable: false,
+      previewReason: 'too_large',
+    });
   });
 
   it('falls back to event messages when response items are absent', () => {
@@ -438,7 +523,107 @@ describe('CodexChunkBuilder', () => {
     }
 
     expect(chunks[2].previousModel).toBe('gpt-5');
+    expect(chunks[2].previousReasoningEffort).toBe('unknown');
     expect(chunks[2].model).toBe('gpt-5.3-codex');
+    expect(chunks[2].reasoningEffort).toBe('unknown');
     expect(chunks[2].timestamp).toBe('2026-02-18T22:30:03.000Z');
+  });
+
+  it('converts Codex bootstrap prelude user messages into system chunks', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T11:00:00.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: '# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nuse the skill\n</INSTRUCTIONS>',
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T11:00:01.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: '<environment_context>\n  <cwd>/repo</cwd>\n  <shell>zsh</shell>\n</environment_context>',
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T11:00:02.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: '<permissions instructions>\nfilesystem sandboxing applies\n</permissions instructions>',
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T11:00:02.500Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: '<collaboration_mode># Collaboration Mode: Default\n</collaboration_mode>',
+            },
+          ],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-19T11:00:03.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'show actual user prompt in sidebar' }],
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-19T11:00:04.000Z',
+        payload: {
+          type: 'agent_message',
+          message: 'Working on it.',
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(6);
+    expect(chunks[0].type).toBe('system');
+    expect(chunks[1].type).toBe('system');
+    expect(chunks[2].type).toBe('system');
+    expect(chunks[3].type).toBe('system');
+    expect(chunks[4]).toEqual({
+      type: 'user',
+      content: 'show actual user prompt in sidebar',
+      timestamp: '2026-02-19T11:00:03.000Z',
+    });
+
+    if (chunks[5].type !== 'ai') {
+      throw new Error('Expected AI chunk');
+    }
+
+    expect(chunks[5].textBlocks).toEqual(['Working on it.']);
   });
 });

@@ -12,6 +12,7 @@ export interface CodexDevToolsConfig {
     showReasoning: boolean;
     showTokenCounts: boolean;
     showDeveloperMessages: boolean;
+    showAttachmentPreviews: boolean;
     theme: 'system' | 'dark' | 'light';
   };
   httpServer?: {
@@ -29,6 +30,7 @@ const DEFAULT_CONFIG: CodexDevToolsConfig = {
     showReasoning: true,
     showTokenCounts: true,
     showDeveloperMessages: false,
+    showAttachmentPreviews: true,
     theme: 'dark',
   },
   httpServer: {

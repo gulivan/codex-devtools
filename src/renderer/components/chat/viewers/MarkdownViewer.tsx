@@ -6,6 +6,12 @@ interface MarkdownViewerProps {
   markdown: string;
 }
 
+interface MarkdownInlineProps {
+  markdown: string;
+  className?: string;
+  keyPrefix?: string;
+}
+
 type MarkdownBlock =
   | { type: 'heading'; level: number; text: string }
   | { type: 'paragraph'; text: string }
@@ -149,6 +155,22 @@ function renderInline(markdown: string, keyPrefix: string): ReactNode[] {
 
   return nodes;
 }
+
+export const MarkdownInline = ({
+  markdown,
+  className,
+  keyPrefix = 'inline',
+}: MarkdownInlineProps): JSX.Element => {
+  const nodes = renderInline(markdown, keyPrefix);
+
+  return (
+    <span className={className}>
+      {nodes.map((node, index) => (
+        <Fragment key={`${keyPrefix}-${index}`}>{node}</Fragment>
+      ))}
+    </span>
+  );
+};
 
 export const MarkdownViewer = ({ markdown }: MarkdownViewerProps): JSX.Element => {
   const blocks = parseBlocks(markdown);

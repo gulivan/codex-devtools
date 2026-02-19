@@ -15,6 +15,7 @@ function createConfig(theme: 'system' | 'dark' | 'light' = 'dark'): CodexDevTool
       showReasoning: true,
       showTokenCounts: true,
       showDeveloperMessages: false,
+      showAttachmentPreviews: true,
       theme,
     },
     httpServer: {
@@ -40,6 +41,7 @@ function createApiMock(): RendererApi {
       filePath: '/tmp/s-1.jsonl',
       cwd: '/repo/a',
       model: 'gpt-5',
+      modelUsages: [{ model: 'gpt-5', reasoningEffort: 'high' }],
       cliVersion: '0.1.0',
       gitBranch: 'main',
       gitCommit: 'abc123',
@@ -106,6 +108,47 @@ describe('renderer store', () => {
     expect(store.getState().activeSessionId).toBe('session-1');
     expect(store.getState().openTabs.some((tab) => tab.type === 'session' && tab.sessionId === 'session-1')).toBe(true);
     expect(store.getState().chunks).toHaveLength(2);
+  });
+
+  it('builds session previews from the first non-bootstrap user message', async () => {
+    const api = createApiMock();
+    const previewChunks: CodexChunk[] = [
+      {
+        type: 'user',
+        content: '# AGENTS.md instructions for /repo/a\n\n<INSTRUCTIONS>\ninternal\n</INSTRUCTIONS>',
+        timestamp: '2026-02-18T01:00:00.100Z',
+      },
+      {
+        type: 'user',
+        content:
+          '<environment_context>\n  <cwd>/repo/a</cwd>\n  <shell>zsh</shell>\n</environment_context>',
+        timestamp: '2026-02-18T01:00:00.200Z',
+      },
+      {
+        type: 'user',
+        content:
+          '<permissions instructions>\nsandbox_mode is workspace-write\n</permissions instructions>',
+        timestamp: '2026-02-18T01:00:00.250Z',
+      },
+      {
+        type: 'user',
+        content: '<collaboration_mode># Collaboration Mode: Default\n</collaboration_mode>',
+        timestamp: '2026-02-18T01:00:00.275Z',
+      },
+      {
+        type: 'user',
+        content: 'show real prompt title in sidebar',
+        timestamp: '2026-02-18T01:00:00.300Z',
+      },
+    ];
+    api.getSessionChunks = vi.fn(async () => previewChunks);
+
+    const store = createAppStore(api);
+    await store.getState().fetchSessions('/repo/a');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.getState().sessionPreviews['session-1']).toBe('show real prompt title in sidebar');
   });
 
   it('uses dark theme before config is fetched', () => {

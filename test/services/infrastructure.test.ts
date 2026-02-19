@@ -28,6 +28,7 @@ describe('ConfigManager', () => {
 
     const manager = new ConfigManager(configPath);
     expect(manager.getConfig().display.theme).toBe('dark');
+    expect(manager.getConfig().display.showAttachmentPreviews).toBe(true);
 
     rmSync(dir, { recursive: true, force: true });
   });

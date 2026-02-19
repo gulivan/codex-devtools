@@ -37,6 +37,7 @@ export interface SessionMetaEntry {
     originator?: string;
     cli_version?: string;
     model_provider?: string;
+    model?: string;
     base_instructions?: string | JsonRecord;
     git?: SessionMetaGit;
   };
@@ -391,7 +392,8 @@ export function isSessionMetaEntry(value: unknown): value is SessionMetaEntry {
     !hasOptionalString(value.payload, 'cwd') ||
     !hasOptionalString(value.payload, 'originator') ||
     !hasOptionalString(value.payload, 'cli_version') ||
-    !hasOptionalString(value.payload, 'model_provider')
+    !hasOptionalString(value.payload, 'model_provider') ||
+    !hasOptionalString(value.payload, 'model')
   ) {
     return false;
   }

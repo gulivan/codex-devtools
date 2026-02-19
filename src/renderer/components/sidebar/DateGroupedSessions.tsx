@@ -69,7 +69,11 @@ export const DateGroupedSessions = (): JSX.Element => {
     }
 
     const preview = sessionPreviews[session.id] ?? '';
-    const haystack = `${session.model} ${session.id} ${preview}`.toLowerCase();
+    const modelUsages = Array.isArray(session.modelUsages) ? session.modelUsages : [];
+    const modelUsageHaystack = modelUsages
+      .map((usage) => `${usage.model} ${usage.reasoningEffort}`)
+      .join(' ');
+    const haystack = `${session.model} ${modelUsageHaystack} ${session.id} ${preview}`.toLowerCase();
     return haystack.includes(searchQuery);
   });
 

@@ -1,5 +1,28 @@
 import { type CodexSessionMetrics } from './domain';
 
+export interface CodexToolTokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export type UserAttachmentKind = 'image' | 'text' | 'markdown' | 'code' | 'binary' | 'unknown';
+
+export type UserAttachmentPreviewReason = 'unsupported_mime' | 'too_large' | 'decode_error' | 'binary';
+
+export interface UserAttachment {
+  id: string;
+  source: 'response_item' | 'event_msg';
+  mimeType: string;
+  kind: UserAttachmentKind;
+  encoding: 'base64' | 'plain';
+  sizeBytes: number | null;
+  previewable: boolean;
+  previewReason?: UserAttachmentPreviewReason;
+  dataUrl?: string;
+  textContent?: string;
+  fileName?: string | null;
+}
+
 export interface CodexToolExecution {
   functionCall: {
     name: string;
@@ -12,12 +35,14 @@ export interface CodexToolExecution {
     isError: boolean;
   } | null;
   duration: number;
+  tokenUsage: CodexToolTokenUsage | null;
 }
 
 export interface UserChunk {
   type: 'user';
   content: string;
   timestamp: string;
+  attachments?: UserAttachment[];
 }
 
 export interface AIChunk {
@@ -36,4 +61,13 @@ export interface SystemChunk {
   timestamp: string;
 }
 
-export type CodexChunk = UserChunk | AIChunk | SystemChunk;
+export interface ModelChangeChunk {
+  type: 'model_change';
+  previousModel: string;
+  previousReasoningEffort: string;
+  model: string;
+  reasoningEffort: string;
+  timestamp: string;
+}
+
+export type CodexChunk = UserChunk | AIChunk | SystemChunk | ModelChangeChunk;

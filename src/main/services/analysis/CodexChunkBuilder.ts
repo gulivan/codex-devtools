@@ -1,9 +1,15 @@
+import { Buffer } from 'node:buffer';
+
 import {
   type AIChunk,
   type CodexChunk,
   type CodexLogEntry,
   type CodexSessionMetrics,
   type CodexToolExecution,
+  type UserChunk,
+  type UserAttachment,
+  type UserAttachmentKind,
+  type UserAttachmentPreviewReason,
   type EventMsgEntry,
   getContentBlockText,
   isAgentMessagePayload,
@@ -19,6 +25,7 @@ import {
   isUserMessagePayload,
   reasoningSummaryToText,
 } from '@main/types';
+import { classifyCodexBootstrapMessage } from '@shared/utils';
 
 import { CodexMessageClassifier } from '../parsing/CodexMessageClassifier';
 
@@ -40,10 +47,62 @@ interface PendingUserEvent {
   content: string;
   timestamp: string;
   source: 'response' | 'event';
+  attachments: UserAttachment[];
+}
+
+interface ModelUsageState {
+  model: string;
+  reasoningEffort: string;
 }
 
 const IMAGE_TAG_PATTERN = /<\/?image\b[^>]*>/gi;
-const IMAGE_PLACEHOLDER_PATTERN = /\[Image #\d+\]/gi;
+const IMAGE_PLACEHOLDER_PATTERN = /\[(?:Image|Attachment) #\d+\]/gi;
+const MAX_ATTACHMENT_PREVIEW_BYTES = 2 * 1024 * 1024;
+const MAX_TEXT_ATTACHMENT_PREVIEW_CHARS = 20_000;
+
+const MARKDOWN_MIME_TYPES = new Set([
+  'text/markdown',
+  'text/x-markdown',
+  'application/markdown',
+]);
+
+const CODE_MIME_TYPES = new Set([
+  'application/json',
+  'application/xml',
+  'application/javascript',
+  'application/x-javascript',
+  'application/typescript',
+  'application/x-typescript',
+  'application/x-sh',
+  'application/x-shellscript',
+  'application/x-python',
+  'application/x-rust',
+  'application/x-go',
+  'application/x-yaml',
+  'application/yaml',
+  'application/x-toml',
+]);
+
+const CODE_TEXT_SUBTYPES = new Set([
+  'x-python',
+  'x-sh',
+  'x-shellscript',
+  'x-go',
+  'x-rust',
+  'x-java',
+  'x-c',
+  'x-c++',
+  'x-csharp',
+  'javascript',
+  'typescript',
+  'html',
+  'css',
+  'xml',
+  'yaml',
+  'x-yaml',
+  'toml',
+  'csv',
+]);
 
 function parseTimestampMs(timestamp: string): number {
   const ms = new Date(timestamp).getTime();
@@ -72,6 +131,269 @@ function normalizeUserTextWithoutImagePlaceholders(value: string): string {
   return normalizeComparableText(
     sanitizeUserText(value).replace(IMAGE_PLACEHOLDER_PATTERN, ' '),
   );
+}
+
+function normalizeBase64Payload(value: string): string {
+  const compact = value.replace(/\s+/g, '');
+  const remainder = compact.length % 4;
+  if (remainder === 0) {
+    return compact;
+  }
+
+  return `${compact}${'='.repeat(4 - remainder)}`;
+}
+
+function estimateBase64DecodedBytes(value: string): number {
+  const normalized = normalizeBase64Payload(value);
+  const padding = normalized.endsWith('==') ? 2 : normalized.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+interface ParsedBase64DataUrl {
+  mimeType: string;
+  base64Payload: string;
+  dataUrl: string;
+}
+
+function parseBase64DataUrl(value: string): ParsedBase64DataUrl | null {
+  const trimmed = value.trim();
+  if (!trimmed.toLowerCase().startsWith('data:')) {
+    return null;
+  }
+
+  const commaIndex = trimmed.indexOf(',');
+  if (commaIndex < 0) {
+    return null;
+  }
+
+  const metadata = trimmed.slice(5, commaIndex);
+  const payload = trimmed.slice(commaIndex + 1);
+  if (!/;base64$/i.test(metadata) && !/;base64;/i.test(metadata)) {
+    return null;
+  }
+
+  const base64Payload = normalizeBase64Payload(payload);
+  if (!base64Payload || /[^a-zA-Z0-9+/=]/.test(base64Payload)) {
+    return null;
+  }
+
+  const mimeType = metadata.split(';')[0]?.trim().toLowerCase() || 'application/octet-stream';
+  return {
+    mimeType,
+    base64Payload,
+    dataUrl: `data:${metadata},${base64Payload}`,
+  };
+}
+
+function inferAttachmentKind(mimeType: string): UserAttachmentKind {
+  if (mimeType.startsWith('image/')) {
+    return 'image';
+  }
+
+  if (MARKDOWN_MIME_TYPES.has(mimeType)) {
+    return 'markdown';
+  }
+
+  if (CODE_MIME_TYPES.has(mimeType)) {
+    return 'code';
+  }
+
+  if (mimeType.startsWith('text/')) {
+    const subtype = mimeType.slice('text/'.length);
+    if (subtype === 'markdown' || subtype === 'x-markdown') {
+      return 'markdown';
+    }
+
+    return CODE_TEXT_SUBTYPES.has(subtype) ? 'code' : 'text';
+  }
+
+  if (mimeType === 'application/octet-stream') {
+    return 'binary';
+  }
+
+  if (mimeType.startsWith('application/')) {
+    return 'binary';
+  }
+
+  return 'unknown';
+}
+
+function truncateTextPreview(value: string): string {
+  if (value.length <= MAX_TEXT_ATTACHMENT_PREVIEW_CHARS) {
+    return value;
+  }
+
+  return `${value.slice(0, MAX_TEXT_ATTACHMENT_PREVIEW_CHARS)}\n\n… preview truncated`;
+}
+
+function decodeBase64Text(value: string): string | null {
+  try {
+    const decoded = Buffer.from(normalizeBase64Payload(value), 'base64').toString('utf8');
+    return truncateTextPreview(decoded);
+  } catch {
+    return null;
+  }
+}
+
+function attachmentFingerprint(attachment: UserAttachment): string {
+  const previewSample = attachment.dataUrl
+    ? attachment.dataUrl.slice(0, 96)
+    : attachment.textContent
+      ? attachment.textContent.slice(0, 96)
+      : '';
+
+  return [
+    attachment.mimeType,
+    attachment.kind,
+    attachment.sizeBytes ?? -1,
+    attachment.previewable ? '1' : '0',
+    attachment.previewReason ?? '',
+    previewSample,
+  ].join('|');
+}
+
+function mergeAttachments(primary: UserAttachment[], incoming: UserAttachment[]): UserAttachment[] {
+  if (primary.length === 0) {
+    return [...incoming];
+  }
+
+  if (incoming.length === 0) {
+    return [...primary];
+  }
+
+  const merged = [...primary];
+  const seen = new Set(primary.map((attachment) => attachmentFingerprint(attachment)));
+  for (const attachment of incoming) {
+    const fingerprint = attachmentFingerprint(attachment);
+    if (seen.has(fingerprint)) {
+      continue;
+    }
+
+    seen.add(fingerprint);
+    merged.push(attachment);
+  }
+
+  return merged;
+}
+
+function withPreviewDisabledReason(
+  attachment: UserAttachment,
+  previewReason: UserAttachmentPreviewReason,
+): UserAttachment {
+  return {
+    ...attachment,
+    previewable: false,
+    previewReason,
+    dataUrl: undefined,
+    textContent: undefined,
+  };
+}
+
+function buildAttachmentFromDataUrl(
+  dataUrl: string,
+  attachmentId: string,
+  source: 'response_item' | 'event_msg',
+): UserAttachment {
+  const parsed = parseBase64DataUrl(dataUrl);
+  if (!parsed) {
+    return {
+      id: attachmentId,
+      source,
+      mimeType: 'application/octet-stream',
+      kind: 'unknown',
+      encoding: 'base64',
+      sizeBytes: null,
+      previewable: false,
+      previewReason: 'decode_error',
+      fileName: null,
+    };
+  }
+
+  const kind = inferAttachmentKind(parsed.mimeType);
+  const sizeBytes = estimateBase64DecodedBytes(parsed.base64Payload);
+
+  const baseAttachment: UserAttachment = {
+    id: attachmentId,
+    source,
+    mimeType: parsed.mimeType,
+    kind,
+    encoding: 'base64',
+    sizeBytes,
+    previewable: false,
+    fileName: null,
+  };
+
+  if (sizeBytes > MAX_ATTACHMENT_PREVIEW_BYTES) {
+    return withPreviewDisabledReason(baseAttachment, 'too_large');
+  }
+
+  if (kind === 'image') {
+    return {
+      ...baseAttachment,
+      previewable: true,
+      dataUrl: parsed.dataUrl,
+    };
+  }
+
+  if (kind === 'text' || kind === 'markdown' || kind === 'code') {
+    const textContent = decodeBase64Text(parsed.base64Payload);
+    if (textContent === null) {
+      return withPreviewDisabledReason(baseAttachment, 'decode_error');
+    }
+
+    return {
+      ...baseAttachment,
+      previewable: true,
+      textContent,
+    };
+  }
+
+  if (kind === 'binary') {
+    return withPreviewDisabledReason(baseAttachment, 'binary');
+  }
+
+  return withPreviewDisabledReason(baseAttachment, 'unsupported_mime');
+}
+
+function extractAttachmentsFromResponseUser(
+  entry: CodexLogEntry,
+  timestamp: string,
+): UserAttachment[] {
+  if (!isResponseItemEntry(entry) || !isMessagePayload(entry.payload) || entry.payload.role !== 'user') {
+    return [];
+  }
+
+  const attachments: UserAttachment[] = [];
+  let attachmentIndex = 0;
+
+  for (const block of entry.payload.content) {
+    if (block.type !== 'input_image') {
+      continue;
+    }
+
+    if (!('image_url' in block) || typeof block.image_url !== 'string') {
+      continue;
+    }
+
+    attachmentIndex += 1;
+    attachments.push(
+      buildAttachmentFromDataUrl(
+        block.image_url,
+        `${timestamp}-attachment-${attachmentIndex}`,
+        'response_item',
+      ),
+    );
+  }
+
+  return attachments;
+}
+
+function attachmentPlaceholder(attachment: UserAttachment, index: number): string {
+  if (attachment.kind === 'image') {
+    return `[Image #${index + 1}]`;
+  }
+
+  return `[Attachment #${index + 1}]`;
 }
 
 function isEquivalentUserContent(left: string, right: string): boolean {
@@ -117,6 +439,11 @@ function normalizeModel(model: string | undefined): string {
   return model?.trim() ?? '';
 }
 
+function normalizeReasoningEffort(effort: string | undefined): string {
+  const value = effort?.trim();
+  return value ? value : 'unknown';
+}
+
 function pushUniqueAdjacent(blocks: string[], value: string): void {
   const text = value.trim();
   if (!text) {
@@ -151,27 +478,69 @@ function mergePendingUser(
 
   const sameText = isEquivalentUserContent(pending.content, incoming.content);
   if (sameText) {
-    return pickPreferredEquivalentUserContent(pending, incoming);
+    const preferred = pickPreferredEquivalentUserContent(pending, incoming);
+    return {
+      ...preferred,
+      attachments: mergeAttachments(pending.attachments, incoming.attachments),
+    };
   }
 
-  chunks.push({
-    type: 'user',
-    content: pending.content,
-    timestamp: pending.timestamp,
-  });
+  pushPendingUserChunk(chunks, pending);
   return incoming;
 }
 
-function toUserContent(entry: CodexLogEntry): string {
+function pushPendingUserChunk(chunks: CodexChunk[], pending: PendingUserEvent): void {
+  if (classifyCodexBootstrapMessage(pending.content)) {
+    chunks.push({
+      type: 'system',
+      content: pending.content,
+      timestamp: pending.timestamp,
+    });
+    return;
+  }
+
+  const userChunk: UserChunk = {
+    type: 'user',
+    content: pending.content,
+    timestamp: pending.timestamp,
+  };
+  if (pending.attachments.length > 0) {
+    userChunk.attachments = pending.attachments;
+  }
+
+  chunks.push(userChunk);
+}
+
+interface UserEntryPayload {
+  content: string;
+  attachments: UserAttachment[];
+}
+
+function toUserPayload(entry: CodexLogEntry): UserEntryPayload {
   if (isResponseItemEntry(entry) && isMessagePayload(entry.payload) && entry.payload.role === 'user') {
-    return sanitizeUserText(entry.payload.content.map(getContentBlockText).filter(Boolean).join('\n'));
+    const attachments = extractAttachmentsFromResponseUser(entry, entry.timestamp);
+    let content = sanitizeUserText(entry.payload.content.map(getContentBlockText).filter(Boolean).join('\n'));
+    if (!content && attachments.length > 0) {
+      content = attachments.map((attachment, index) => attachmentPlaceholder(attachment, index)).join('\n');
+    }
+
+    return {
+      content,
+      attachments,
+    };
   }
 
   if (isEventMsgEntry(entry) && isUserMessagePayload(entry.payload)) {
-    return sanitizeUserText(entry.payload.message);
+    return {
+      content: sanitizeUserText(entry.payload.message),
+      attachments: [],
+    };
   }
 
-  return '';
+  return {
+    content: '',
+    attachments: [],
+  };
 }
 
 function parseToolOutputError(output: string): boolean {
@@ -218,7 +587,7 @@ export class CodexChunkBuilder {
     const chunks: CodexChunk[] = [];
     let currentAI: InProgressAIChunk | null = null;
     let pendingUser: PendingUserEvent | null = null;
-    let lastSeenModel: string | null = null;
+    let lastSeenModelUsage: ModelUsageState | null = null;
 
     const flushAIChunk = (): void => {
       if (!currentAI) {
@@ -280,11 +649,7 @@ export class CodexChunkBuilder {
         return;
       }
 
-      chunks.push({
-        type: 'user',
-        content: pendingUser.content,
-        timestamp: pendingUser.timestamp,
-      });
+      pushPendingUserChunk(chunks, pendingUser);
       pendingUser = null;
     };
 
@@ -297,12 +662,20 @@ export class CodexChunkBuilder {
           continue;
         }
 
-        if (lastSeenModel === null) {
-          lastSeenModel = model;
+        const usage: ModelUsageState = {
+          model,
+          reasoningEffort: normalizeReasoningEffort(entry.payload.effort),
+        };
+
+        if (lastSeenModelUsage === null) {
+          lastSeenModelUsage = usage;
           continue;
         }
 
-        if (lastSeenModel === model) {
+        if (
+          lastSeenModelUsage.model === usage.model &&
+          lastSeenModelUsage.reasoningEffort === usage.reasoningEffort
+        ) {
           continue;
         }
 
@@ -310,17 +683,20 @@ export class CodexChunkBuilder {
         flushAIChunk();
         chunks.push({
           type: 'model_change',
-          previousModel: lastSeenModel,
-          model,
+          previousModel: lastSeenModelUsage.model,
+          previousReasoningEffort: lastSeenModelUsage.reasoningEffort,
+          model: usage.model,
+          reasoningEffort: usage.reasoningEffort,
           timestamp: entry.timestamp,
         });
-        lastSeenModel = model;
+        lastSeenModelUsage = usage;
         continue;
       }
 
       if (isEventMsgEntry(entry) && isUserMessagePayload(entry.payload)) {
         flushAIChunk();
-        const content = sanitizeUserText(entry.payload.message);
+        const payload = toUserPayload(entry);
+        const content = payload.content.trim();
         if (!content) {
           continue;
         }
@@ -329,6 +705,7 @@ export class CodexChunkBuilder {
           content,
           timestamp: entry.timestamp,
           source: 'event',
+          attachments: payload.attachments,
         });
         continue;
       }
@@ -337,7 +714,8 @@ export class CodexChunkBuilder {
 
       if (isUser) {
         flushAIChunk();
-        const content = toUserContent(entry).trim();
+        const payload = toUserPayload(entry);
+        const content = payload.content.trim();
         if (!content) {
           continue;
         }
@@ -346,6 +724,7 @@ export class CodexChunkBuilder {
           content,
           timestamp: entry.timestamp,
           source: 'response',
+          attachments: payload.attachments,
         });
         continue;
       }

@@ -13,6 +13,7 @@ function createConfig(theme: 'system' | 'dark' | 'light' = 'dark'): CodexDevTool
       showReasoning: true,
       showTokenCounts: true,
       showDeveloperMessages: false,
+      showAttachmentPreviews: true,
       theme,
     },
     httpServer: {

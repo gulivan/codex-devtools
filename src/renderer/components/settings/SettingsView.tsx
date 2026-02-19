@@ -14,6 +14,7 @@ export const SettingsView = (): JSX.Element => {
 
   const [watchPath, setWatchPath] = useState('');
   const [theme, setTheme] = useState<CodexDevToolsConfig['display']['theme']>('dark');
+  const [showAttachmentPreviews, setShowAttachmentPreviews] = useState(true);
 
   useEffect(() => {
     if (!appConfig && !configLoading) {
@@ -28,6 +29,7 @@ export const SettingsView = (): JSX.Element => {
 
     setWatchPath(appConfig.general.codexSessionsPath ?? '');
     setTheme(appConfig.display.theme);
+    setShowAttachmentPreviews(appConfig.display.showAttachmentPreviews);
   }, [appConfig]);
 
   if (!appConfig) {
@@ -95,6 +97,30 @@ export const SettingsView = (): JSX.Element => {
             }}
           >
             Apply theme
+          </button>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>Attachments</h3>
+        <label className="settings-toggle" htmlFor="show-attachment-previews">
+          <input
+            id="show-attachment-previews"
+            type="checkbox"
+            checked={showAttachmentPreviews}
+            onChange={(event) => setShowAttachmentPreviews(event.target.checked)}
+          />
+          <span>Show attachment previews in chat</span>
+        </label>
+        <div className="settings-actions">
+          <button
+            type="button"
+            className="tabbar-action primary"
+            onClick={() => {
+              void updateConfig('display', { showAttachmentPreviews });
+            }}
+          >
+            Save attachment preferences
           </button>
         </div>
       </section>

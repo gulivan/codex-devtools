@@ -98,6 +98,7 @@ describe('CodexSessionParser', () => {
     expect(parsed.session.id).toBe('session-1');
     expect(parsed.session.cwd).toBe('/repo/project-a');
     expect(parsed.session.model).toBe('gpt-5');
+    expect(parsed.session.modelUsages).toEqual([{ model: 'gpt-5', reasoningEffort: 'high' }]);
     expect(parsed.sessionMeta).not.toBeNull();
     expect(parsed.metrics.inputTokens).toBe(10);
     expect(parsed.metrics.cachedTokens).toBe(2);
@@ -154,6 +155,7 @@ describe('CodexSessionParser', () => {
     const parsed = await parser.parseSessionFile(filePath);
 
     expect(parsed.session.id).toBe('session-2');
+    expect(parsed.session.modelUsages).toEqual([]);
     expect(parsed.responseItems).toHaveLength(2);
     expect(parsed.classifiedEntries.some((entry) => entry.kind === 'user')).toBe(true);
     expect(parsed.classifiedEntries.some((entry) => entry.kind === 'reasoning')).toBe(true);

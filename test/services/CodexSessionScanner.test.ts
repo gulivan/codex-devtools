@@ -11,6 +11,9 @@ function writeSessionFile(
   timestamp: string,
   cwd: string,
   includePrelude = false,
+  firstModel = 'gpt-5',
+  firstEffort = 'high',
+  sessionMetaModel?: string,
 ): string {
   const dir = path.join(root, datePath);
   mkdirSync(dir, { recursive: true });
@@ -25,12 +28,23 @@ function writeSessionFile(
       originator: 'codex_cli_rs',
       cli_version: '1.0.0',
       model_provider: 'openai',
+      model: sessionMetaModel,
       base_instructions: { text: 'base' },
       git: {
         commit_hash: 'abc123',
         branch: 'main',
         repository_url: 'https://example.com/repo.git',
       },
+    },
+  };
+
+  const turnContextLine = {
+    type: 'turn_context',
+    timestamp: '2026-02-18T22:00:01.000Z',
+    payload: {
+      cwd,
+      model: firstModel,
+      effort: firstEffort,
     },
   };
 
@@ -46,8 +60,9 @@ function writeSessionFile(
           },
         },
         firstLine,
+        turnContextLine,
       ]
-    : [firstLine];
+    : [firstLine, turnContextLine];
 
   writeFileSync(filePath, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`, 'utf8');
   return filePath;
@@ -63,6 +78,9 @@ describe('CodexSessionScanner', () => {
       '2026-02-18T22:00:00.000Z',
       '/repo/project-a',
       true,
+      'gpt-5',
+      'high',
+      'gpt-4.1-mini',
     );
 
     const scanner = new CodexSessionScanner(root);
@@ -71,6 +89,8 @@ describe('CodexSessionScanner', () => {
 
     expect(sessions).toHaveLength(1);
     expect(sessions[0].cwd).toBe('/repo/project-a');
+    expect(sessions[0].model).toBe('gpt-5');
+    expect(sessions[0].modelUsages).toEqual([{ model: 'gpt-5', reasoningEffort: 'high' }]);
     expect(projects).toHaveLength(1);
     expect(projects[0].sessionCount).toBe(1);
     expect(projects[0].name).toBe('project-a');

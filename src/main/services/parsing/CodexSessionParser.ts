@@ -4,6 +4,7 @@ import {
   EMPTY_CODEX_SESSION_METRICS,
   type CodexLogEntry,
   type CodexSession,
+  type CodexSessionModelUsage,
   type CodexSessionMetrics,
   type EventMsgEntry,
   type ResponseItemEntry,
@@ -53,6 +54,15 @@ function fallbackSessionIdFromFilePath(filePath: string): string {
   return match?.[1] ?? fileName.replace(/\.jsonl$/, '');
 }
 
+function normalizeModel(model: string | undefined): string {
+  return model?.trim() ?? '';
+}
+
+function normalizeReasoningEffort(effort: string | undefined): string {
+  const value = effort?.trim();
+  return value ? value : 'unknown';
+}
+
 export class CodexSessionParser {
   private readonly classifier: CodexMessageClassifier;
 
@@ -74,6 +84,8 @@ export class CodexSessionParser {
     let firstTimestamp: string | null = null;
     let lastTimestamp: string | null = null;
     let firstTurnContextModel: string | null = null;
+    const modelUsages: CodexSessionModelUsage[] = [];
+    const modelUsageKeys = new Set<string>();
 
     for (const entry of entries) {
       if (firstTimestamp === null) {
@@ -96,8 +108,21 @@ export class CodexSessionParser {
 
       if (isTurnContextEntry(entry)) {
         turnContexts.push(entry);
-        if (firstTurnContextModel === null && entry.payload.model) {
-          firstTurnContextModel = entry.payload.model;
+        const model = normalizeModel(entry.payload.model);
+        if (firstTurnContextModel === null && model) {
+          firstTurnContextModel = model;
+        }
+
+        if (model) {
+          const usage: CodexSessionModelUsage = {
+            model,
+            reasoningEffort: normalizeReasoningEffort(entry.payload.effort),
+          };
+          const usageKey = `${usage.model}::${usage.reasoningEffort}`;
+          if (!modelUsageKeys.has(usageKey)) {
+            modelUsageKeys.add(usageKey);
+            modelUsages.push(usage);
+          }
         }
         continue;
       }
@@ -124,11 +149,20 @@ export class CodexSessionParser {
 
     const fallbackStart = firstTimestamp ?? new Date(0).toISOString();
     const startTime = coerceTimestamp(sessionMeta?.timestamp, fallbackStart);
+    const sessionMetaModel = normalizeModel(sessionMeta?.payload.model);
+    if (sessionMetaModel && modelUsages.length === 0) {
+      modelUsages.push({
+        model: sessionMetaModel,
+        reasoningEffort: 'unknown',
+      });
+    }
+
     const session: CodexSession = {
       id: sessionMeta?.payload.id ?? fallbackSessionIdFromFilePath(filePath),
       filePath,
       cwd: sessionMeta?.payload.cwd ?? turnContexts[0]?.payload.cwd ?? '',
-      model: firstTurnContextModel ?? '',
+      model: firstTurnContextModel ?? sessionMetaModel,
+      modelUsages,
       cliVersion: sessionMeta?.payload.cli_version ?? '',
       gitBranch: sessionMeta?.payload.git?.branch ?? '',
       gitCommit: sessionMeta?.payload.git?.commit_hash ?? '',

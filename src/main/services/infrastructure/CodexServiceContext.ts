@@ -1,3 +1,5 @@
+import * as path from 'node:path';
+
 import { CodexChunkBuilder } from '@main/services/analysis';
 import { CodexSessionScanner } from '@main/services/discovery';
 import { CodexSessionParser, type CodexParsedSession } from '@main/services/parsing';
@@ -32,6 +34,7 @@ export interface CodexServiceContextOptions {
 
 const DETAIL_CACHE_PREFIX = 'detail';
 const CHUNKS_CACHE_PREFIX = 'chunks';
+const SESSIONS_CACHE_PREFIX = 'sessions';
 
 function extractSearchContent(entry: CodexLogEntry): string {
   if (isResponseItemEntry(entry) && isMessagePayload(entry.payload)) {
@@ -79,6 +82,40 @@ function buildSnippet(content: string, query: string): string {
   return normalizedContent.slice(start, end);
 }
 
+function buildProjectsFromSessions(sessions: CodexSession[]) {
+  const projectMap = new Map<
+    string,
+    {
+      cwd: string;
+      name: string;
+      sessionCount: number;
+      lastActivity: string;
+    }
+  >();
+
+  for (const session of sessions) {
+    const existing = projectMap.get(session.cwd);
+    if (!existing) {
+      projectMap.set(session.cwd, {
+        cwd: session.cwd,
+        name: path.basename(session.cwd) || session.cwd,
+        sessionCount: 1,
+        lastActivity: session.startTime,
+      });
+      continue;
+    }
+
+    existing.sessionCount += 1;
+    if (new Date(session.startTime).getTime() > new Date(existing.lastActivity).getTime()) {
+      existing.lastActivity = session.startTime;
+    }
+  }
+
+  return Array.from(projectMap.values()).sort(
+    (a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime(),
+  );
+}
+
 export class CodexServiceContext {
   readonly scanner: CodexSessionScanner;
   readonly parser: CodexSessionParser;
@@ -122,7 +159,8 @@ export class CodexServiceContext {
   }
 
   async getProjects() {
-    return this.scanner.scanProjects();
+    const sessions = await this.getAllSessions();
+    return buildProjectsFromSessions(sessions);
   }
 
   async getSessions(projectCwd: string): Promise<CodexSession[]> {
@@ -130,7 +168,7 @@ export class CodexServiceContext {
       return [];
     }
 
-    const sessions = await this.scanner.scanSessions();
+    const sessions = await this.getAllSessions();
     return sessions.filter((session) => session.cwd === projectCwd);
   }
 
@@ -187,7 +225,7 @@ export class CodexServiceContext {
       };
     }
 
-    const sessions = await this.scanner.scanSessions();
+    const sessions = await this.getAllSessions();
     const results: CodexSearchSessionsResult['results'] = [];
 
     for (const session of sessions) {
@@ -242,8 +280,20 @@ export class CodexServiceContext {
   }
 
   private async findSessionById(sessionId: string): Promise<CodexSession | null> {
-    const sessions = await this.scanner.scanSessions();
+    const sessions = await this.getAllSessions();
     const match = sessions.find((session) => session.id === sessionId);
     return match ?? null;
+  }
+
+  private async getAllSessions(): Promise<CodexSession[]> {
+    const cacheKey = DataCache.buildKey(SESSIONS_CACHE_PREFIX, 'all');
+    const cached = this.dataCache.get(cacheKey) as CodexSession[] | undefined;
+    if (cached) {
+      return cached;
+    }
+
+    const sessions = await this.scanner.scanSessions();
+    this.dataCache.set(cacheKey, sessions);
+    return sessions;
   }
 }

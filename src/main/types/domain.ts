@@ -5,11 +5,18 @@ export interface CodexProject {
   lastActivity: string;
 }
 
+export interface CodexSessionModelUsage {
+  model: string;
+  reasoningEffort: string;
+}
+
 export interface CodexSession {
   id: string;
   filePath: string;
+  fileSizeBytes?: number;
   cwd: string;
   model: string;
+  modelUsages: CodexSessionModelUsage[];
   cliVersion: string;
   gitBranch: string;
   gitCommit: string;

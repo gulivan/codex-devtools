@@ -9,6 +9,9 @@ interface ExecutionTraceProps {
   execution: CodexToolExecution;
 }
 
+const COMMAND_ARGUMENT_KEYS = ['cmd', 'command'] as const;
+const MAX_COMMAND_PREVIEW_LENGTH = 120;
+
 function prettyPrintJson(value: string): string {
   try {
     return JSON.stringify(JSON.parse(value), null, 2);
@@ -17,10 +20,67 @@ function prettyPrintJson(value: string): string {
   }
 }
 
+function compactWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function extractStringValue(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const text = compactWhitespace(value);
+    return text ? text : null;
+  }
+
+  if (Array.isArray(value)) {
+    const pieces = value.filter((piece): piece is string => typeof piece === 'string').map(compactWhitespace);
+    const text = pieces.filter(Boolean).join(' ');
+    return text ? text : null;
+  }
+
+  return null;
+}
+
+function parseCommandPreview(execution: CodexToolExecution): string | null {
+  const normalizedName = execution.functionCall.name.toLowerCase();
+  if (!normalizedName.includes('command') && !normalizedName.includes('exec')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(execution.functionCall.arguments) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) {
+      return null;
+    }
+
+    const argumentRecord = parsed as Record<string, unknown>;
+    for (const key of COMMAND_ARGUMENT_KEYS) {
+      const candidate = extractStringValue(argumentRecord[key]);
+      if (candidate) {
+        return truncateMiddle(candidate, MAX_COMMAND_PREVIEW_LENGTH);
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 export const ExecutionTrace = ({ execution }: ExecutionTraceProps): JSX.Element => {
   const [expanded, setExpanded] = useState(false);
 
   const output = execution.functionOutput?.output ?? '';
+  const commandPreview = useMemo(() => parseCommandPreview(execution), [execution]);
+  const tokenUsageLabel = execution.tokenUsage
+    ? `${execution.tokenUsage.inputTokens.toLocaleString()} in • ${execution.tokenUsage.outputTokens.toLocaleString()} out`
+    : null;
   const formattedArguments = useMemo(
     () => prettyPrintJson(execution.functionCall.arguments),
     [execution.functionCall.arguments],
@@ -30,8 +90,14 @@ export const ExecutionTrace = ({ execution }: ExecutionTraceProps): JSX.Element 
   return (
     <section className={`trace-card ${execution.functionOutput?.isError ? 'error' : ''}`}>
       <button type="button" className="trace-header" onClick={() => setExpanded((value) => !value)}>
-        <span className="trace-name">{execution.functionCall.name}</span>
-        <span className="trace-meta">{expanded ? 'Hide' : 'Show'} trace</span>
+        <div className="trace-header-main">
+          <span className="trace-name">{execution.functionCall.name}</span>
+          {commandPreview ? <span className="trace-command-preview">{commandPreview}</span> : null}
+        </div>
+        <div className="trace-header-meta">
+          {tokenUsageLabel ? <span className="trace-token-usage">{tokenUsageLabel}</span> : null}
+          <span className="trace-meta">{expanded ? 'Hide' : 'Show'} trace</span>
+        </div>
       </button>
 
       {expanded ? (

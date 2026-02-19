@@ -4,8 +4,8 @@ import type { StateCreator } from 'zustand';
 
 import type { AppState, AppTab } from '../types';
 
-const DASHBOARD_TAB_ID = 'dashboard';
-const SETTINGS_TAB_ID = 'settings';
+export const DASHBOARD_TAB_ID = 'dashboard';
+export const SETTINGS_TAB_ID = 'settings';
 
 function createSessionTabId(sessionId: string): string {
   return `session:${sessionId}`;
@@ -29,7 +29,7 @@ export const createTabSlice = (_client: RendererApi): StateCreator<AppState, [],
   set,
   get,
 ) => ({
-  openTabs: [{ id: DASHBOARD_TAB_ID, type: 'dashboard', label: 'Dashboard' }],
+  openTabs: [],
   activeTabId: DASHBOARD_TAB_ID,
 
   openSessionTab: (session, previewLabel) => {
@@ -55,32 +55,11 @@ export const createTabSlice = (_client: RendererApi): StateCreator<AppState, [],
   },
 
   openDashboardTab: () => {
-    const hasDashboard = get().openTabs.some((tab) => tab.id === DASHBOARD_TAB_ID);
-
-    if (!hasDashboard) {
-      const dashboardTab: AppTab = { id: DASHBOARD_TAB_ID, type: 'dashboard', label: 'Dashboard' };
-      set((state) => ({
-        openTabs: [dashboardTab, ...state.openTabs],
-        activeTabId: DASHBOARD_TAB_ID,
-      }));
-      return;
-    }
-
-    set({ activeTabId: DASHBOARD_TAB_ID });
+    set({ activeTabId: DASHBOARD_TAB_ID, activeSessionId: null });
   },
 
   openSettingsTab: () => {
-    const existing = get().openTabs.find((tab) => tab.id === SETTINGS_TAB_ID);
-    if (existing) {
-      set({ activeTabId: SETTINGS_TAB_ID });
-      return;
-    }
-
-    const settingsTab: AppTab = { id: SETTINGS_TAB_ID, type: 'settings', label: 'Settings' };
-    set((state) => ({
-      openTabs: [...state.openTabs, settingsTab],
-      activeTabId: SETTINGS_TAB_ID,
-    }));
+    set({ activeTabId: SETTINGS_TAB_ID, activeSessionId: null });
   },
 
   setActiveTab: (tabId) => {
@@ -100,21 +79,14 @@ export const createTabSlice = (_client: RendererApi): StateCreator<AppState, [],
   },
 
   closeTab: (tabId) => {
-    if (tabId === DASHBOARD_TAB_ID) {
-      return;
-    }
-
     set((state) => {
       const nextTabs = state.openTabs.filter((tab) => tab.id !== tabId);
-      const safeTabs: AppTab[] =
-        nextTabs.length > 0
-          ? nextTabs
-          : [{ id: DASHBOARD_TAB_ID, type: 'dashboard', label: 'Dashboard' }];
-      const nextActiveTabId = state.activeTabId === tabId ? safeTabs[safeTabs.length - 1].id : state.activeTabId;
-      const activeTab = safeTabs.find((tab) => tab.id === nextActiveTabId);
+      const nextActiveTabId =
+        state.activeTabId === tabId ? (nextTabs[nextTabs.length - 1]?.id ?? DASHBOARD_TAB_ID) : state.activeTabId;
+      const activeTab = nextTabs.find((tab) => tab.id === nextActiveTabId);
 
       return {
-        openTabs: safeTabs,
+        openTabs: nextTabs,
         activeTabId: nextActiveTabId,
         activeSessionId: activeTab?.type === 'session' ? activeTab.sessionId ?? null : null,
       };

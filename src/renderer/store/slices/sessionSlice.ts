@@ -1,18 +1,25 @@
 import type { RendererApi } from '@renderer/api';
 import type { CodexChunk, CodexSession } from '@main/types';
+import { isCodexBootstrapMessage } from '@shared/utils';
 import { createLogger } from '@shared/utils/logger';
 import type { StateCreator } from 'zustand';
 
 import type { AppState } from '../types';
 
 const logger = createLogger('Store:sessionSlice');
+const PREVIEW_PREFETCH_LIMIT = 25;
 
 function extractFirstMessagePreview(chunks: CodexChunk[] | null): string | null {
   if (!chunks || chunks.length === 0) {
     return null;
   }
 
-  const firstUser = chunks.find((chunk) => chunk.type === 'user');
+  const firstUser = chunks.find(
+    (chunk): chunk is Extract<CodexChunk, { type: 'user' }> =>
+      chunk.type === 'user' &&
+      chunk.content.trim().length > 0 &&
+      !isCodexBootstrapMessage(chunk.content),
+  );
   if (!firstUser || !firstUser.content.trim()) {
     return null;
   }
@@ -62,25 +69,27 @@ export const createSessionSlice = (
         };
       });
 
-      void Promise.all(
-        sessions.slice(0, 25).map(async (session) => {
-          const chunks = await client.getSessionChunks(session.id);
-          const preview = extractFirstMessagePreview(chunks);
+      void (async () => {
+        try {
+          for (const session of sessions.slice(0, PREVIEW_PREFETCH_LIMIT)) {
+            const chunks = await client.getSessionChunks(session.id);
+            const preview = extractFirstMessagePreview(chunks);
 
-          if (!preview) {
-            return;
+            if (!preview) {
+              continue;
+            }
+
+            set((state) => ({
+              sessionPreviews: {
+                ...state.sessionPreviews,
+                [session.id]: preview,
+              },
+            }));
           }
-
-          set((state) => ({
-            sessionPreviews: {
-              ...state.sessionPreviews,
-              [session.id]: preview,
-            },
-          }));
-        }),
-      ).catch((error) => {
-        logger.error('Failed to prefetch session previews', error);
-      });
+        } catch (error) {
+          logger.error('Failed to prefetch session previews', error);
+        }
+      })();
     } catch (error) {
       set({
         sessionsLoading: false,

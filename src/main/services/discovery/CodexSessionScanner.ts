@@ -2,7 +2,13 @@ import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { type CodexProject, type CodexSession, isSessionMetaEntry } from '@main/types';
+import {
+  type CodexProject,
+  type CodexSession,
+  type CodexSessionModelUsage,
+  isSessionMetaEntry,
+  isTurnContextEntry,
+} from '@main/types';
 import { readFirstJsonlEntry } from '@main/utils/jsonl';
 import { createLogger } from '@shared/utils/logger';
 
@@ -35,6 +41,24 @@ function fallbackSessionIdFromName(fileName: string): string {
   return match?.[1] ?? fileName.replace(/\.jsonl$/, '');
 }
 
+function normalizeModel(model: string | undefined): string {
+  return model?.trim() ?? '';
+}
+
+function normalizeReasoningEffort(effort: string | undefined): string {
+  const value = effort?.trim();
+  return value ? value : 'unknown';
+}
+
+async function getFileSizeBytes(filePath: string): Promise<number | undefined> {
+  try {
+    const stats = await fs.stat(filePath);
+    return stats.isFile() ? stats.size : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class CodexSessionScanner {
   private readonly sessionsRoot: string;
 
@@ -60,12 +84,42 @@ export class CodexSessionScanner {
         continue;
       }
 
+      const [firstTurnUsage, fileSizeBytes] = await Promise.all([
+        readFirstJsonlEntry<CodexSessionModelUsage>(filePath, (value) => {
+          if (!isTurnContextEntry(value)) {
+            return null;
+          }
+
+          const model = normalizeModel(value.payload.model);
+          if (!model) {
+            return null;
+          }
+
+          return {
+            model,
+            reasoningEffort: normalizeReasoningEffort(value.payload.effort),
+          };
+        }),
+        getFileSizeBytes(filePath),
+      ]);
+
+      const sessionMetaModel = normalizeModel(metaEntry.payload.model);
+      const firstTurnModel = firstTurnUsage?.model ?? '';
+      const modelUsages =
+        firstTurnUsage
+          ? [firstTurnUsage]
+          : sessionMetaModel
+            ? [{ model: sessionMetaModel, reasoningEffort: 'unknown' }]
+            : [];
+
       const fileName = path.basename(filePath);
       sessions.push({
         id: metaEntry.payload.id ?? fallbackSessionIdFromName(fileName),
         filePath,
+        fileSizeBytes,
         cwd: metaEntry.payload.cwd ?? '',
-        model: '',
+        model: firstTurnModel || sessionMetaModel,
+        modelUsages,
         cliVersion: metaEntry.payload.cli_version ?? '',
         gitBranch: metaEntry.payload.git?.branch ?? '',
         gitCommit: metaEntry.payload.git?.commit_hash ?? '',

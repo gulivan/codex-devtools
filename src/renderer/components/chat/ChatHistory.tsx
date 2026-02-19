@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 
 import { useAppStore } from '@renderer/store';
+import {
+  classifyCodexBootstrapMessage,
+  type CodexBootstrapMessageKind,
+} from '@shared/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import { AIChatGroup } from './AIChatGroup';
@@ -10,11 +14,25 @@ interface ChatHistoryProps {
   sessionId?: string;
 }
 
+function getPreludeLabel(kind: CodexBootstrapMessageKind): string {
+  switch (kind) {
+    case 'agents_instructions':
+      return 'AGENTS.md instructions';
+    case 'environment_context':
+      return 'Environment context';
+    case 'permissions_instructions':
+      return 'Permissions instructions';
+    case 'collaboration_mode':
+      return 'Collaboration mode';
+  }
+}
+
 export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
-  const { chunks, chunksLoading, chunksSessionId } = useAppStore((state) => ({
+  const { chunks, chunksLoading, chunksSessionId, sessions } = useAppStore((state) => ({
     chunks: state.chunks,
     chunksLoading: state.chunksLoading,
     chunksSessionId: state.chunksSessionId,
+    sessions: state.sessions,
   }));
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -43,6 +61,26 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
 
   const hasChunks = chunks.length > 0;
   const isLoading = chunksLoading && chunksSessionId === sessionId;
+  const initialModelUsage = useMemo(() => {
+    if (!sessionId) {
+      return null;
+    }
+
+    const session = sessions.find((item) => item.id === sessionId);
+    if (!session) {
+      return null;
+    }
+
+    if (Array.isArray(session.modelUsages) && session.modelUsages.length > 0) {
+      return session.modelUsages[0];
+    }
+
+    if (!session.model) {
+      return null;
+    }
+
+    return { model: session.model, reasoningEffort: 'unknown' };
+  }, [sessionId, sessions]);
 
   const content = useMemo(() => {
     if (isLoading && !hasChunks) {
@@ -63,48 +101,85 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
     }
 
     return (
-      <div
-        style={{
-          height: `${rowVirtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualRows.map((virtualRow) => {
-          const chunk = chunks[virtualRow.index];
-          if (!chunk) {
-            return null;
-          }
-
-          const key = `${chunk.type}-${chunk.timestamp}-${virtualRow.index}`;
-
-          return (
-            <div
-              key={key}
-              data-index={virtualRow.index}
-              ref={rowVirtualizer.measureElement}
-              className="chat-row"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              {chunk.type === 'user' ? <UserChatGroup chunk={chunk} /> : null}
-              {chunk.type === 'ai' ? <AIChatGroup chunk={chunk} /> : null}
-              {chunk.type === 'system' ? (
-                <div className="chat-system-message">
-                  <p>{chunk.content}</p>
-                </div>
+      <>
+        {initialModelUsage ? (
+          <div className="chat-model-summary">
+            <span className="chat-model-summary-label">
+              Initial model: <code>{initialModelUsage.model}</code>
+              {initialModelUsage.reasoningEffort !== 'unknown' ? (
+                <>
+                  {' '}
+                  <code>{initialModelUsage.reasoningEffort}</code>
+                </>
               ) : null}
-            </div>
-          );
-        })}
-      </div>
+            </span>
+          </div>
+        ) : null}
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualRows.map((virtualRow) => {
+            const chunk = chunks[virtualRow.index];
+            if (!chunk) {
+              return null;
+            }
+
+            const systemPreludeKind =
+              chunk.type === 'system' ? classifyCodexBootstrapMessage(chunk.content) : null;
+
+            const key = `${chunk.type}-${chunk.timestamp}-${virtualRow.index}`;
+
+            return (
+              <div
+                key={key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                className="chat-row"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                {chunk.type === 'user' ? <UserChatGroup chunk={chunk} /> : null}
+                {chunk.type === 'ai' ? <AIChatGroup chunk={chunk} /> : null}
+                {chunk.type === 'system' ? (
+                  systemPreludeKind ? (
+                    <details className={`chat-system-prelude ${systemPreludeKind}`}>
+                      <summary className="chat-system-prelude-summary">
+                        <span>{getPreludeLabel(systemPreludeKind)}</span>
+                        <span className="chat-system-prelude-summary-hint">System prelude</span>
+                      </summary>
+                      <pre className="chat-system-prelude-content">{chunk.content}</pre>
+                    </details>
+                  ) : (
+                    <div className="chat-system-message">
+                      <p>{chunk.content}</p>
+                    </div>
+                  )
+                ) : null}
+                {chunk.type === 'model_change' ? (
+                  <div className="chat-model-change">
+                    <span className="chat-model-change-label">
+                      Model changed: <code>{chunk.previousModel}</code>{' '}
+                      <code>{chunk.previousReasoningEffort}</code> -&gt;{' '}
+                      <code>{chunk.model}</code> <code>{chunk.reasoningEffort}</code>
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </>
     );
-  }, [chunks, hasChunks, isLoading, rowVirtualizer, virtualRows]);
+  }, [chunks, hasChunks, initialModelUsage, isLoading, rowVirtualizer, virtualRows]);
 
   return (
     <div className="chat-shell" ref={parentRef}>
