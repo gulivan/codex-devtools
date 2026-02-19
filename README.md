@@ -81,16 +81,6 @@ Default URL:
 - `pnpm lint`: run ESLint
 - `pnpm typecheck`: run TypeScript type checks
 
-## CI/CD
-
-- `.github/workflows/ci.yml`: typecheck/lint/build/test on `main` and PRs.
-- `.github/workflows/release.yml`: cross-platform packaging on tags (`v*`) and manual dispatch.
-- `.github/workflows/npm-publish.yml`: npm publish on tags (`v*`) and manual dispatch.
-
-Required GitHub repository secret for npm publishing:
-
-- `NPM_TOKEN`: npm automation token with publish access.
-
 ## Troubleshooting
 
 If `pnpm dev` fails with `Electron failed to install correctly` or `Electron uninstall`:
