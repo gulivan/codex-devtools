@@ -27,7 +27,8 @@
     "README.md"
   ],
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:raw": "electron-vite dev",
     "build": "electron-vite build",
     "dist": "electron-builder --mac --win --linux --publish never",
     "dist:mac": "electron-builder --mac --publish never",
@@ -46,6 +47,7 @@
     "@fastify/static": "^9.0.0",
     "@tanstack/react-virtual": "^3.10.8",
     "date-fns": "^3.6.0",
+    "electron": "~40.3.0",
     "fastify": "^5.7.4",
     "lucide-react": "^0.562.0",
     "react": "^18.3.1",
@@ -59,7 +61,6 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.17",
-    "electron": "~40.3.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "eslint": "^9.39.2",

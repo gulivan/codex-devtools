@@ -38,7 +38,17 @@ npx codex-devtools
 bunx codex-devtools
 ```
 
-This starts a standalone HTTP server at `http://localhost:3456`.
+This launches the native Electron app window.
+
+To run web/HTTP mode explicitly:
+
+```bash
+npx codex-devtools --web
+# or
+bunx codex-devtools --web
+```
+
+Standalone mode serves at `http://localhost:3456`.
 
 ## Standalone mode
 
