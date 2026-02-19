@@ -3,14 +3,35 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Desktop app for inspecting Codex session data",
+  "license": "MIT",
+  "homepage": "https://github.com/gulivan/codex-devtools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gulivan/codex-devtools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gulivan/codex-devtools/issues"
+  },
   "main": "dist-electron/main/index.cjs",
+  "files": [
+    "dist-electron/**",
+    "out/renderer/**",
+    "README.md"
+  ],
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "dist": "electron-builder --mac --win --linux",
+    "dist:mac": "electron-builder --mac",
+    "dist:mac:arm64": "electron-builder --mac --arm64",
+    "dist:mac:x64": "electron-builder --mac --x64",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "standalone": "pnpm build && node dist-electron/main/standalone.cjs"
+    "standalone": "pnpm build && node dist-electron/main/standalone.cjs",
+    "prepack": "pnpm build"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
@@ -52,9 +73,51 @@
       "dist-electron/**",
       "package.json"
     ],
+    "asar": true,
+    "asarUnpack": [
+      "out/renderer/**"
+    ],
+    "npmRebuild": false,
     "extraMetadata": {
       "main": "dist-electron/main/index.cjs"
-    }
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "sign": false
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "category": "Development"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "releaseType": "draft"
+      }
+    ]
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "packageManager": "pnpm@10.25.0"
 }
