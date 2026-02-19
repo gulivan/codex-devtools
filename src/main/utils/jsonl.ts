@@ -1,4 +1,4 @@
-import { createReadStream } from 'node:fs';
+import { type ReadStream, createReadStream } from 'node:fs';
 import * as readline from 'node:readline';
 
 import { createLogger } from '@shared/utils/logger';
@@ -15,6 +15,32 @@ export interface StreamJsonlOptions<T> {
 
 const defaultParser = <T>(value: unknown): T => value as T;
 
+function waitForStreamClose(stream: ReadStream): Promise<void> {
+  if (stream.closed) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    const done = (): void => {
+      stream.off('close', done);
+      stream.off('error', done);
+      resolve();
+    };
+
+    stream.once('close', done);
+    stream.once('error', done);
+  });
+}
+
+async function closeReaderAndStream(reader: readline.Interface, stream: ReadStream): Promise<void> {
+  const closePromise = waitForStreamClose(stream);
+  reader.close();
+  if (!stream.destroyed) {
+    stream.destroy();
+  }
+  await closePromise;
+}
+
 export async function streamJsonlFile<T = unknown>(
   filePath: string,
   options: StreamJsonlOptions<T>,
@@ -27,24 +53,28 @@ export async function streamJsonlFile<T = unknown>(
   });
 
   let lineNumber = 0;
-  for await (const line of reader) {
-    lineNumber += 1;
-    if (!line.trim()) {
-      continue;
-    }
+  try {
+    for await (const line of reader) {
+      lineNumber += 1;
+      if (!line.trim()) {
+        continue;
+      }
 
-    try {
-      const raw = JSON.parse(line) as unknown;
-      const parsed = parser(raw, lineNumber);
-      if (parsed !== null) {
-        await options.onEntry(parsed, lineNumber);
-      }
-    } catch (error) {
-      options.onError?.(error, line, lineNumber);
-      if (!options.onError) {
-        logger.warn(`Failed to parse JSONL line ${lineNumber} in ${filePath}`, error);
+      try {
+        const raw = JSON.parse(line) as unknown;
+        const parsed = parser(raw, lineNumber);
+        if (parsed !== null) {
+          await options.onEntry(parsed, lineNumber);
+        }
+      } catch (error) {
+        options.onError?.(error, line, lineNumber);
+        if (!options.onError) {
+          logger.warn(`Failed to parse JSONL line ${lineNumber} in ${filePath}`, error);
+        }
       }
     }
+  } finally {
+    await closeReaderAndStream(reader, stream);
   }
 }
 
@@ -74,26 +104,28 @@ export async function readFirstJsonlEntry<T = unknown>(
   });
 
   let lineNumber = 0;
-  for await (const line of reader) {
-    lineNumber += 1;
-    if (!line.trim()) {
-      continue;
-    }
-
-    try {
-      const raw = JSON.parse(line) as unknown;
-      const parsed = entryParser(raw, lineNumber);
-      if (parsed !== null) {
-        reader.close();
-        stream.destroy();
-        return parsed;
+  let firstEntry: T | null = null;
+  try {
+    for await (const line of reader) {
+      lineNumber += 1;
+      if (!line.trim()) {
+        continue;
       }
-    } catch (error) {
-      logger.warn(`Failed to parse JSONL line ${lineNumber} in ${filePath}`, error);
+
+      try {
+        const raw = JSON.parse(line) as unknown;
+        const parsed = entryParser(raw, lineNumber);
+        if (parsed !== null) {
+          firstEntry = parsed;
+          break;
+        }
+      } catch (error) {
+        logger.warn(`Failed to parse JSONL line ${lineNumber} in ${filePath}`, error);
+      }
     }
+  } finally {
+    await closeReaderAndStream(reader, stream);
   }
 
-  reader.close();
-  stream.destroy();
-  return null;
+  return firstEntry;
 }

@@ -13,3 +13,4 @@ coverage/
 rollout-*.jsonl
 .codex/
 sessions/
+.0spec/
