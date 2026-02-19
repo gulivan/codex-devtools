@@ -1159,24 +1159,27 @@ select {
 
 .chat-compaction-divider {
   display: flex;
-  justify-content: center;
-  margin: 4px 0;
+  width: 100%;
+  margin: 8px 0;
 }
 
 .chat-compaction-divider-label {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  border-radius: 999px;
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-  font-size: 0.74rem;
-  padding: 4px 10px;
+  width: 100%;
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.13));
+  color: #fbbf24;
+  font-size: 0.84rem;
+  font-weight: 600;
+  padding: 10px 14px;
 }
 
 :root.light .chat-compaction-divider-label {
-  background: rgba(245, 158, 11, 0.16);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.2), rgba(245, 158, 11, 0.14));
   color: #b45309;
 }
 

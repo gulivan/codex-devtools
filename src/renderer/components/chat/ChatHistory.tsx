@@ -233,7 +233,7 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
                 {chunk.type === 'compaction' ? (
                   <div className="chat-compaction-divider">
                     <span className="chat-compaction-divider-label">
-                      <Layers size={12} aria-hidden="true" />
+                      <Layers size={14} aria-hidden="true" />
                       Context compacted
                     </span>
                   </div>

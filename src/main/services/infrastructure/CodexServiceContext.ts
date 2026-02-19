@@ -10,6 +10,9 @@ import {
   type CodexSearchSessionsResult,
   type CodexSession,
   getContentBlockText,
+  isCompactedEntry,
+  isCompactionEntry,
+  isContextCompactedPayload,
   isAgentMessagePayload,
   isAgentReasoningPayload,
   isEventMsgEntry,
@@ -33,10 +36,23 @@ export interface CodexServiceContextOptions {
   cacheTtlMinutes?: number;
 }
 
-const DETAIL_CACHE_PREFIX = 'detail';
-const CHUNKS_CACHE_PREFIX = 'chunks';
+const DETAIL_CACHE_PREFIX = 'detail-v2';
+const CHUNKS_CACHE_PREFIX = 'chunks-v2';
 const SESSIONS_CACHE_PREFIX = 'sessions';
 const UNKNOWN_REVISION = 'unknown-revision';
+
+function hasCompactionSignals(entries: CodexLogEntry[]): boolean {
+  return entries.some(
+    (entry) =>
+      isCompactedEntry(entry) ||
+      isCompactionEntry(entry) ||
+      (isEventMsgEntry(entry) && isContextCompactedPayload(entry.payload)),
+  );
+}
+
+function hasCompactionChunk(chunks: CodexChunk[]): boolean {
+  return chunks.some((chunk) => chunk.type === 'compaction');
+}
 
 function extractSearchContent(entry: CodexLogEntry): string {
   if (isResponseItemEntry(entry) && isMessagePayload(entry.payload)) {
@@ -210,7 +226,18 @@ export class CodexServiceContext {
     const cacheKey = DataCache.buildKey(CHUNKS_CACHE_PREFIX, `${sessionId}:${revision}`);
     const cached = this.dataCache.get(cacheKey) as CodexChunk[] | undefined;
     if (cached) {
-      return cached;
+      const detailForValidation = await this.getSessionDetail(sessionId);
+      if (!detailForValidation) {
+        return cached;
+      }
+
+      if (!hasCompactionSignals(detailForValidation.entries) || hasCompactionChunk(cached)) {
+        return cached;
+      }
+
+      const refreshed = this.chunkBuilder.buildChunks(detailForValidation.entries);
+      this.dataCache.set(cacheKey, refreshed);
+      return refreshed;
     }
 
     const detail = await this.getSessionDetail(sessionId);
