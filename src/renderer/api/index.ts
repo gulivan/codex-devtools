@@ -1,12 +1,20 @@
 import type { CodexDevToolsConfig, CodexFileChangeEvent } from '@main/services/infrastructure';
 import type { CodexParsedSession } from '@main/services/parsing';
-import type { CodexChunk, CodexProject, CodexSearchSessionsResult, CodexSession } from '@main/types';
+import type {
+  CodexChunk,
+  CodexProject,
+  CodexSearchSessionsResult,
+  CodexSession,
+  CodexStatsScope,
+  CodexStatsSummary,
+} from '@main/types';
 
 export interface RendererApi {
   getProjects: () => Promise<CodexProject[]>;
   getSessions: (projectCwd: string) => Promise<CodexSession[]>;
   getSessionDetail: (sessionId: string) => Promise<CodexParsedSession | null>;
   getSessionChunks: (sessionId: string) => Promise<CodexChunk[] | null>;
+  getStats: (scope?: CodexStatsScope) => Promise<CodexStatsSummary>;
   searchSessions: (query: string) => Promise<CodexSearchSessionsResult>;
   getConfig: () => Promise<CodexDevToolsConfig>;
   updateConfig: (key: keyof CodexDevToolsConfig, value: unknown) => Promise<CodexDevToolsConfig | null>;
@@ -79,6 +87,16 @@ class HttpApiClient implements RendererApi {
 
   async getSessionChunks(sessionId: string): Promise<CodexChunk[] | null> {
     return this.get<CodexChunk[] | null>(`/sessions/${encodeURIComponent(sessionId)}/chunks`);
+  }
+
+  async getStats(scope: CodexStatsScope = { type: 'all' }): Promise<CodexStatsSummary> {
+    if (scope.type === 'project') {
+      return this.get<CodexStatsSummary>(
+        `/stats?scope=project&cwd=${encodeURIComponent(scope.cwd)}`,
+      );
+    }
+
+    return this.get<CodexStatsSummary>('/stats?scope=all');
   }
 
   async searchSessions(query: string): Promise<CodexSearchSessionsResult> {

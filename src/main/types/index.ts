@@ -5,3 +5,4 @@ export interface MainProcessStatus {
 export * from './chunks';
 export * from './codexJsonl';
 export * from './domain';
+export * from './tokenUsage';

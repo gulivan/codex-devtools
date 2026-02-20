@@ -239,6 +239,151 @@ describe('api layer', () => {
     ).toBe(true);
   });
 
+  it('keeps deleted sessions in stats as archived rows', async () => {
+    const initialStats = await serviceContext.getStats({ type: 'all' });
+    expect(initialStats.totals.sessions).toBe(3);
+    expect(initialStats.totals.archivedSessions).toBe(0);
+
+    rmSync(path.join(sessionsRoot, '2026', '02', '18', 'rollout-session-1.jsonl'), { force: true });
+    serviceContext.dataCache.clear();
+
+    const refreshedStats = await serviceContext.getStats({ type: 'all' });
+    expect(refreshedStats.totals.sessions).toBe(3);
+    expect(refreshedStats.totals.archivedSessions).toBe(1);
+  });
+
+  it('does not overcount duplicate token_count events in stats totals', async () => {
+    const filePath = path.join(sessionsRoot, '2026', '02', '18', 'rollout-session-1.jsonl');
+    appendFileSync(
+      filePath,
+      `${JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-02-18T21:00:06.500Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 10,
+              cached_input_tokens: 0,
+              output_tokens: 5,
+              reasoning_output_tokens: 1,
+              total_tokens: 16,
+            },
+            last_token_usage: {
+              input_tokens: 10,
+              cached_input_tokens: 0,
+              output_tokens: 5,
+              reasoning_output_tokens: 1,
+              total_tokens: 16,
+            },
+            model_context_window: 200000,
+          },
+          rate_limits: null,
+        },
+      })}\n`,
+      'utf8',
+    );
+
+    serviceContext.dataCache.clear();
+    const stats = await serviceContext.getStats({ type: 'all' });
+
+    expect(stats.totals.totalTokens).toBe(48);
+    expect(stats.totals.inputTokens).toBe(30);
+    expect(stats.totals.outputTokens).toBe(15);
+  });
+
+  it('refreshes stats after session changes without manual cache clear', async () => {
+    const initialStats = await serviceContext.getStats({ type: 'all' });
+
+    const filePath = path.join(sessionsRoot, '2026', '02', '18', 'rollout-session-1.jsonl');
+    appendFileSync(
+      filePath,
+      `${JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-02-18T21:00:06.900Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 15,
+              cached_input_tokens: 0,
+              output_tokens: 7,
+              reasoning_output_tokens: 2,
+              total_tokens: 22,
+            },
+            last_token_usage: {
+              input_tokens: 5,
+              cached_input_tokens: 0,
+              output_tokens: 2,
+              reasoning_output_tokens: 1,
+              total_tokens: 6,
+            },
+            model_context_window: 200000,
+          },
+          rate_limits: null,
+        },
+      })}\n`,
+      'utf8',
+    );
+
+    const refreshedStats = await serviceContext.getStats({ type: 'all' });
+    expect(refreshedStats.totals.totalTokens).toBe(initialStats.totals.totalTokens + 6);
+    expect(refreshedStats.totals.inputTokens).toBe(initialStats.totals.inputTokens + 5);
+    expect(refreshedStats.totals.outputTokens).toBe(initialStats.totals.outputTokens + 2);
+  });
+
+  it('deduplicates reasoning effort session counts across model switches in one session', async () => {
+    const filePath = path.join(sessionsRoot, '2026', '02', '18', 'rollout-session-1.jsonl');
+    appendFileSync(
+      filePath,
+      `${JSON.stringify({
+        type: 'turn_context',
+        timestamp: '2026-02-18T21:00:06.100Z',
+        payload: {
+          cwd: '/workspace/app-a',
+          model: 'gpt-5-mini',
+          effort: 'high',
+        },
+      })}\n`,
+      'utf8',
+    );
+    appendFileSync(
+      filePath,
+      `${JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-02-18T21:00:06.200Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 12,
+              cached_input_tokens: 0,
+              output_tokens: 7,
+              reasoning_output_tokens: 1,
+              total_tokens: 19,
+            },
+            last_token_usage: {
+              input_tokens: 2,
+              cached_input_tokens: 0,
+              output_tokens: 2,
+              reasoning_output_tokens: 0,
+              total_tokens: 3,
+            },
+            model_context_window: 200000,
+          },
+          rate_limits: null,
+        },
+      })}\n`,
+      'utf8',
+    );
+
+    const stats = await serviceContext.getStats({ type: 'all' });
+    const highEffort = stats.reasoningEfforts.find((item) => item.reasoningEffort === 'high');
+
+    expect(highEffort).toBeDefined();
+    expect(highEffort?.sessionCount).toBe(3);
+  });
+
   it('updates config by section key', () => {
     const updated = serviceContext.updateConfig('display', { theme: 'dark' });
     expect(updated?.display.theme).toBe('dark');
@@ -272,6 +417,10 @@ describe('api layer', () => {
     const chunksResponse = await app.inject({ method: 'GET', url: '/sessions/session-1/chunks' });
     expect(chunksResponse.statusCode).toBe(200);
     expect(JSON.parse(chunksResponse.body)).toBeInstanceOf(Array);
+
+    const statsResponse = await app.inject({ method: 'GET', url: '/stats?scope=all' });
+    expect(statsResponse.statusCode).toBe(200);
+    expect(JSON.parse(statsResponse.body)?.totals?.sessions).toBeGreaterThan(0);
 
     const searchResponse = await app.inject({ method: 'GET', url: '/search?q=login' });
     expect(searchResponse.statusCode).toBe(200);
@@ -324,6 +473,11 @@ describe('api layer', () => {
       totalMatches: number;
     };
     expect(search.totalMatches).toBeGreaterThan(0);
+
+    const stats = (await ipcMainMock.invoke(IPC_CHANNELS.SESSIONS_GET_STATS, { type: 'all' })) as {
+      totals: { sessions: number };
+    };
+    expect(stats.totals.sessions).toBeGreaterThan(0);
 
     const version = await ipcMainMock.invoke(IPC_CHANNELS.UTILITY_GET_APP_VERSION);
     expect(version).toBe('1.2.3');

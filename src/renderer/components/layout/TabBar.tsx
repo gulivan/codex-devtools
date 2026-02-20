@@ -3,6 +3,7 @@ import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { useAppStore } from '@renderer/store';
 
 const DASHBOARD_TAB_ID = 'dashboard';
+const STATS_TAB_ID = 'stats';
 const SETTINGS_TAB_ID = 'settings';
 
 export const TabBar = (): JSX.Element => {
@@ -12,6 +13,7 @@ export const TabBar = (): JSX.Element => {
     setActiveTab,
     closeTab,
     openDashboardTab,
+    openStatsTab,
     openSettingsTab,
     toggleSidebarCollapsed,
     sidebarCollapsed,
@@ -21,6 +23,7 @@ export const TabBar = (): JSX.Element => {
     setActiveTab: state.setActiveTab,
     closeTab: state.closeTab,
     openDashboardTab: state.openDashboardTab,
+    openStatsTab: state.openStatsTab,
     openSettingsTab: state.openSettingsTab,
     toggleSidebarCollapsed: state.toggleSidebarCollapsed,
     sidebarCollapsed: state.sidebarCollapsed,
@@ -51,6 +54,15 @@ export const TabBar = (): JSX.Element => {
             aria-selected={activeTabId === DASHBOARD_TAB_ID}
           >
             Dashboard
+          </button>
+          <button
+            className={`tabbar-action ${activeTabId === STATS_TAB_ID ? 'active' : ''}`}
+            onClick={openStatsTab}
+            type="button"
+            role="tab"
+            aria-selected={activeTabId === STATS_TAB_ID}
+          >
+            Stats
           </button>
           <button
             className={`tabbar-action ${activeTabId === SETTINGS_TAB_ID ? 'active' : ''}`}

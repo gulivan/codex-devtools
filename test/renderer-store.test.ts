@@ -2,7 +2,13 @@ import { createAppStore, initializeEventListeners } from '@renderer/store';
 
 import type { RendererApi } from '@renderer/api';
 import type { CodexDevToolsConfig } from '@main/services/infrastructure';
-import type { CodexChunk, CodexProject, CodexSearchSessionsResult, CodexSession } from '@main/types';
+import type {
+  CodexChunk,
+  CodexProject,
+  CodexSearchSessionsResult,
+  CodexSession,
+  CodexStatsSummary,
+} from '@main/types';
 
 function createConfig(theme: 'system' | 'dark' | 'light' = 'dark'): CodexDevToolsConfig {
   return {
@@ -75,11 +81,45 @@ function createApiMock(): RendererApi {
     results: [],
   };
 
+  const emptyStats: CodexStatsSummary = {
+    generatedAt: '2026-02-18T00:00:00.000Z',
+    timezone: 'UTC',
+    scope: { type: 'all' },
+    totals: {
+      sessions: 1,
+      archivedSessions: 0,
+      eventCount: 2,
+      durationMs: 2_000,
+      estimatedCostUsd: 0,
+      totalTokens: 42,
+      inputTokens: 20,
+      outputTokens: 22,
+      cachedTokens: 0,
+      reasoningTokens: 0,
+    },
+    daily: [],
+    hourly: [],
+    topDays: [],
+    topHours: [],
+    models: [],
+    reasoningEfforts: [],
+    costCoverage: {
+      pricedTokens: 0,
+      unpricedTokens: 42,
+      unpricedModels: ['gpt-5'],
+    },
+    rates: {
+      updatedAt: null,
+      source: null,
+    },
+  };
+
   return {
     getProjects: vi.fn(async () => projects),
     getSessions: vi.fn(async () => sessions),
     getSessionDetail: vi.fn(async () => null),
     getSessionChunks: vi.fn(async () => chunks),
+    getStats: vi.fn(async () => emptyStats),
     searchSessions: vi.fn(async () => emptySearch),
     getConfig: vi.fn(async () => createConfig()),
     updateConfig: vi.fn(async (_key, value) => createConfig((value as { theme?: 'system' | 'dark' | 'light' }).theme ?? 'dark')),

@@ -9,11 +9,14 @@ import {
   type EventMsgEntry,
   type ResponseItemEntry,
   type SessionMetaEntry,
+  type TokenUsage,
   type TurnContextEntry,
+  diffTokenUsage,
   isCodexLogEntry,
   isEventMsgEntry,
   isMessagePayload,
   isResponseItemEntry,
+  isSameTokenUsage,
   isSessionMetaEntry,
   isTokenCountPayload,
   isTurnContextEntry,
@@ -84,6 +87,7 @@ export class CodexSessionParser {
     let firstTimestamp: string | null = null;
     let lastTimestamp: string | null = null;
     let firstTurnContextModel: string | null = null;
+    let previousTotalUsage: TokenUsage | null = null;
     const modelUsages: CodexSessionModelUsage[] = [];
     const modelUsageKeys = new Set<string>();
 
@@ -130,7 +134,24 @@ export class CodexSessionParser {
       if (isEventMsgEntry(entry)) {
         eventMessages.push(entry);
         if (isTokenCountPayload(entry.payload) && entry.payload.info) {
-          const usage = entry.payload.info.last_token_usage;
+          const currentTotal = entry.payload.info.total_token_usage;
+          let usage: TokenUsage;
+          if (previousTotalUsage) {
+            const delta = diffTokenUsage(previousTotalUsage, currentTotal);
+            if (delta) {
+              usage = delta;
+            } else if (isSameTokenUsage(previousTotalUsage, currentTotal)) {
+              previousTotalUsage = currentTotal;
+              continue;
+            } else {
+              usage = entry.payload.info.last_token_usage;
+            }
+          } else {
+            usage = currentTotal;
+          }
+
+          previousTotalUsage = currentTotal;
+
           metrics.inputTokens += usage.input_tokens;
           metrics.cachedTokens += usage.cached_input_tokens;
           metrics.outputTokens += usage.output_tokens;

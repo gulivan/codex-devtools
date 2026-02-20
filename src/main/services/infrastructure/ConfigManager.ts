@@ -2,6 +2,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+export const DEFAULT_CODEX_DEVTOOLS_CONFIG_PATH = path.join(
+  os.homedir(),
+  '.config',
+  'codex-devtools',
+  'config.json',
+);
+
 export interface CodexDevToolsConfig {
   general: {
     launchAtLogin: boolean;
@@ -69,7 +76,7 @@ export class ConfigManager {
   private readonly configPath: string;
   private config: CodexDevToolsConfig;
 
-  constructor(configPath: string = path.join(os.homedir(), '.config', 'codex-devtools', 'config.json')) {
+  constructor(configPath: string = DEFAULT_CODEX_DEVTOOLS_CONFIG_PATH) {
     this.configPath = configPath;
     this.config = this.loadConfig();
   }

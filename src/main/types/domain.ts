@@ -35,6 +35,109 @@ export interface CodexSessionMetrics {
   duration: number;
 }
 
+export interface CodexStatsTokenTotals {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  reasoningTokens: number;
+}
+
+export type CodexStatsScope =
+  | { type: 'all' }
+  | {
+    type: 'project';
+    cwd: string;
+  };
+
+export interface CodexStatsDailyPoint extends CodexStatsTokenTotals {
+  date: string;
+  eventCount: number;
+  sessionCount: number;
+}
+
+export interface CodexStatsHourlyPoint extends CodexStatsTokenTotals {
+  hour: number;
+  eventCount: number;
+  sessionCount: number;
+}
+
+export interface CodexStatsTopDay {
+  date: string;
+  eventCount: number;
+  sessionCount: number;
+  totalTokens: number;
+  outputTokens: number;
+}
+
+export interface CodexStatsTopHour {
+  hour: number;
+  eventCount: number;
+  sessionCount: number;
+  totalTokens: number;
+  outputTokens: number;
+}
+
+export interface CodexModelRate {
+  model: string;
+  inputUsdPer1M: number;
+  cachedInputUsdPer1M: number;
+  outputUsdPer1M: number;
+  reasoningOutputUsdPer1M: number;
+}
+
+export interface CodexModelRateCard {
+  updatedAt: string | null;
+  source: string | null;
+  models: CodexModelRate[];
+  warnings: string[];
+}
+
+export interface CodexStatsRatesRefreshResult extends CodexModelRateCard {
+  refreshed: boolean;
+}
+
+export interface CodexStatsModelBreakdown extends CodexStatsTokenTotals {
+  model: string;
+  reasoningEffort: string;
+  sessionCount: number;
+  archivedSessionCount: number;
+  estimatedCostUsd: number;
+}
+
+export interface CodexStatsReasoningEffortBreakdown extends CodexStatsTokenTotals {
+  reasoningEffort: string;
+  sessionCount: number;
+  estimatedCostUsd: number;
+}
+
+export interface CodexStatsCostCoverage {
+  pricedTokens: number;
+  unpricedTokens: number;
+  unpricedModels: string[];
+}
+
+export interface CodexStatsSummary {
+  generatedAt: string;
+  timezone: string;
+  scope: CodexStatsScope;
+  totals: CodexStatsTokenTotals & {
+    sessions: number;
+    archivedSessions: number;
+    eventCount: number;
+    durationMs: number;
+    estimatedCostUsd: number;
+  };
+  daily: CodexStatsDailyPoint[];
+  hourly: CodexStatsHourlyPoint[];
+  topDays: CodexStatsTopDay[];
+  topHours: CodexStatsTopHour[];
+  models: CodexStatsModelBreakdown[];
+  reasoningEfforts: CodexStatsReasoningEffortBreakdown[];
+  costCoverage: CodexStatsCostCoverage;
+  rates: Pick<CodexModelRateCard, 'updatedAt' | 'source'>;
+}
+
 export type CodexSearchMatchKind =
   | 'user'
   | 'assistant'

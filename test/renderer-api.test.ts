@@ -1,6 +1,7 @@
 import type { CodexDevToolsConfig } from '../src/main/services/infrastructure/ConfigManager';
 
 import type { RendererApi } from '@renderer/api';
+import type { CodexStatsSummary } from '@main/types';
 
 function createConfig(theme: 'system' | 'dark' | 'light' = 'dark'): CodexDevToolsConfig {
   return {
@@ -33,11 +34,44 @@ describe('renderer api adapter', () => {
 
   it('uses preload API when running in Electron mode', async () => {
     const getProjects = vi.fn().mockResolvedValue([]);
+    const emptyStats: CodexStatsSummary = {
+      generatedAt: '2026-02-18T00:00:00.000Z',
+      timezone: 'UTC',
+      scope: { type: 'all' },
+      totals: {
+        sessions: 0,
+        archivedSessions: 0,
+        eventCount: 0,
+        durationMs: 0,
+        estimatedCostUsd: 0,
+        totalTokens: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedTokens: 0,
+        reasoningTokens: 0,
+      },
+      daily: [],
+      hourly: [],
+      topDays: [],
+      topHours: [],
+      models: [],
+      reasoningEfforts: [],
+      costCoverage: {
+        pricedTokens: 0,
+        unpricedTokens: 0,
+        unpricedModels: [],
+      },
+      rates: {
+        updatedAt: null,
+        source: null,
+      },
+    };
     const preloadApi: RendererApi = {
       getProjects,
       getSessions: vi.fn(),
       getSessionDetail: vi.fn(),
       getSessionChunks: vi.fn(),
+      getStats: vi.fn(async () => emptyStats),
       searchSessions: vi.fn(),
       getConfig: vi.fn(),
       updateConfig: vi.fn(),

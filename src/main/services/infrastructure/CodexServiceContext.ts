@@ -1,14 +1,19 @@
 import { promises as fs } from 'node:fs';
+import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
-import { CodexChunkBuilder } from '@main/services/analysis';
+import { CodexChunkBuilder, aggregateStatsSummary, buildSessionStatsRecord, type CodexStatsSessionRecord } from '@main/services/analysis';
 import { CodexSessionScanner } from '@main/services/discovery';
 import { CodexSessionParser, type CodexParsedSession } from '@main/services/parsing';
 import {
   type CodexChunk,
   type CodexLogEntry,
+  type CodexModelRateCard,
   type CodexSearchSessionsResult,
   type CodexSession,
+  type CodexStatsRatesRefreshResult,
+  type CodexStatsScope,
+  type CodexStatsSummary,
   getContentBlockText,
   isCompactedEntry,
   isCompactionEntry,
@@ -25,9 +30,15 @@ import {
   reasoningSummaryToText,
 } from '@main/types';
 
-import { ConfigManager, type CodexDevToolsConfig } from './ConfigManager';
+import {
+  ConfigManager,
+  DEFAULT_CODEX_DEVTOOLS_CONFIG_PATH,
+  type CodexDevToolsConfig,
+} from './ConfigManager';
 import { DataCache } from './DataCache';
 import { FileWatcher, type CodexFileChangeEvent } from './FileWatcher';
+import { ModelRatesStore } from './ModelRatesStore';
+import { StatsSnapshotStore } from './StatsSnapshotStore';
 
 export interface CodexServiceContextOptions {
   sessionsPath?: string;
@@ -39,14 +50,16 @@ export interface CodexServiceContextOptions {
 const DETAIL_CACHE_PREFIX = 'detail-v2';
 const CHUNKS_CACHE_PREFIX = 'chunks-v2';
 const SESSIONS_CACHE_PREFIX = 'sessions';
+const STATS_CACHE_PREFIX = 'stats-v1';
 const UNKNOWN_REVISION = 'unknown-revision';
+const TOKEN_COMPUTATION_VERSION = 2;
 
 function hasCompactionSignals(entries: CodexLogEntry[]): boolean {
   return entries.some(
     (entry) =>
-      isCompactedEntry(entry) ||
-      isCompactionEntry(entry) ||
-      (isEventMsgEntry(entry) && isContextCompactedPayload(entry.payload)),
+      isCompactedEntry(entry)
+      || isCompactionEntry(entry)
+      || (isEventMsgEntry(entry) && isContextCompactedPayload(entry.payload)),
   );
 }
 
@@ -134,6 +147,51 @@ function buildProjectsFromSessions(sessions: CodexSession[]) {
   );
 }
 
+function normalizeStatsScope(scope: CodexStatsScope | undefined): CodexStatsScope {
+  if (!scope || scope.type === 'all') {
+    return { type: 'all' };
+  }
+
+  const cwd = scope.cwd?.trim();
+  if (!cwd) {
+    return { type: 'all' };
+  }
+
+  return {
+    type: 'project',
+    cwd,
+  };
+}
+
+function serializeStatsScope(scope: CodexStatsScope): string {
+  if (scope.type === 'all') {
+    return 'all';
+  }
+
+  return `project:${scope.cwd}`;
+}
+
+function buildStatsSessionSignature(
+  sessions: CodexSession[],
+  revisionByFilePath: ReadonlyMap<string, string>,
+): string {
+  const hash = createHash('sha1');
+  const sortedSessions = [...sessions].sort(
+    (left, right) => left.filePath.localeCompare(right.filePath) || left.id.localeCompare(right.id),
+  );
+
+  for (const session of sortedSessions) {
+    hash.update(session.id);
+    hash.update('\0');
+    hash.update(session.filePath);
+    hash.update('\0');
+    hash.update(revisionByFilePath.get(session.filePath) ?? UNKNOWN_REVISION);
+    hash.update('\n');
+  }
+
+  return hash.digest('hex');
+}
+
 export class CodexServiceContext {
   readonly scanner: CodexSessionScanner;
   readonly parser: CodexSessionParser;
@@ -141,17 +199,25 @@ export class CodexServiceContext {
   readonly dataCache: DataCache<unknown>;
   readonly watcher: FileWatcher;
   readonly configManager: ConfigManager;
+  readonly statsSnapshotStore: StatsSnapshotStore;
+  readonly modelRatesStore: ModelRatesStore;
 
   private readonly removeFileChangeListener: () => void;
 
   constructor(options: CodexServiceContextOptions = {}) {
     const sessionsPath = options.sessionsPath ?? process.env.CODEX_SESSIONS_PATH;
+    const configPath = options.configPath ?? DEFAULT_CODEX_DEVTOOLS_CONFIG_PATH;
+
     this.scanner = new CodexSessionScanner(sessionsPath);
     this.parser = new CodexSessionParser();
     this.chunkBuilder = new CodexChunkBuilder();
     this.dataCache = new DataCache<unknown>(options.cacheSize ?? 200, options.cacheTtlMinutes ?? 10);
     this.watcher = new FileWatcher(sessionsPath);
-    this.configManager = new ConfigManager(options.configPath);
+    this.configManager = new ConfigManager(configPath);
+
+    const metadataDirectory = path.dirname(configPath);
+    this.statsSnapshotStore = new StatsSnapshotStore(path.join(metadataDirectory, 'stats-snapshot.json'));
+    this.modelRatesStore = new ModelRatesStore(path.join(metadataDirectory, 'stats-rates.json'));
 
     this.removeFileChangeListener = this.watcher.onFileChange(() => {
       this.dataCache.clear();
@@ -295,6 +361,39 @@ export class CodexServiceContext {
     };
   }
 
+  async getModelRates(): Promise<CodexModelRateCard> {
+    return this.modelRatesStore.getRateCard();
+  }
+
+  async refreshModelRates(): Promise<CodexStatsRatesRefreshResult> {
+    const refreshed = await this.modelRatesStore.refreshFromPricingPage();
+    this.dataCache.clear();
+    return refreshed;
+  }
+
+  async getStats(scope: CodexStatsScope = { type: 'all' }): Promise<CodexStatsSummary> {
+    const normalizedScope = normalizeStatsScope(scope);
+    const rates = await this.getModelRates();
+    const sessions = await this.scanner.scanSessions();
+    const revisionByFilePath = await this.getSessionRevisionLookup(sessions);
+    const sessionSignature = buildStatsSessionSignature(sessions, revisionByFilePath);
+    const cacheKey = DataCache.buildKey(
+      STATS_CACHE_PREFIX,
+      `${serializeStatsScope(normalizedScope)}:${rates.updatedAt ?? 'never'}:${sessionSignature}`,
+    );
+
+    const cached = this.dataCache.get(cacheKey) as CodexStatsSummary | undefined;
+    if (cached) {
+      return cached;
+    }
+
+    const reconciledRecords = await this.reconcileStatsSnapshot(sessions, revisionByFilePath);
+    const summary = aggregateStatsSummary(reconciledRecords, normalizedScope, rates);
+
+    this.dataCache.set(cacheKey, summary);
+    return summary;
+  }
+
   getConfig(): CodexDevToolsConfig {
     return this.configManager.getConfig();
   }
@@ -313,6 +412,94 @@ export class CodexServiceContext {
       key,
       value as Partial<CodexDevToolsConfig[typeof key]>,
     );
+  }
+
+  private async reconcileStatsSnapshot(
+    currentSessions: CodexSession[],
+    revisionByFilePath: ReadonlyMap<string, string>,
+  ): Promise<CodexStatsSessionRecord[]> {
+    const nowIso = new Date().toISOString();
+    const existingRecords = await this.statsSnapshotStore.getSessions();
+    const existingBySessionId = new Map(existingRecords.map((record) => [record.sessionId, record]));
+    const nextRecords: CodexStatsSessionRecord[] = [];
+    const activeSessionIds = new Set<string>();
+
+    for (const session of currentSessions) {
+      activeSessionIds.add(session.id);
+
+      const revision = revisionByFilePath.get(session.filePath) ?? UNKNOWN_REVISION;
+      const existing = existingBySessionId.get(session.id);
+
+      if (
+        existing
+        && existing.revision === revision
+        && existing.tokenComputationVersion === TOKEN_COMPUTATION_VERSION
+      ) {
+        nextRecords.push({
+          ...existing,
+          archived: false,
+          revision,
+          filePath: session.filePath,
+          cwd: session.cwd,
+          startTime: session.startTime,
+          modelUsages: session.modelUsages.length > 0 ? session.modelUsages : existing.modelUsages,
+          lastSeenAt: nowIso,
+        });
+        continue;
+      }
+
+      let detail: CodexParsedSession | null = null;
+      try {
+        detail = await this.getSessionDetail(session.id);
+      } catch {
+        detail = null;
+      }
+      if (!detail) {
+        if (existing) {
+          nextRecords.push({
+            ...existing,
+            archived: false,
+            revision,
+            filePath: session.filePath,
+            cwd: session.cwd,
+            startTime: session.startTime,
+            lastSeenAt: nowIso,
+          });
+        }
+        continue;
+      }
+
+      const nextRecord = buildSessionStatsRecord(detail, revision, nowIso);
+      nextRecord.archived = false;
+      nextRecords.push(nextRecord);
+    }
+
+    for (const record of existingRecords) {
+      if (activeSessionIds.has(record.sessionId)) {
+        continue;
+      }
+
+      nextRecords.push({
+        ...record,
+        archived: true,
+      });
+    }
+
+    nextRecords.sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
+    await this.statsSnapshotStore.saveSessions(nextRecords);
+
+    return nextRecords;
+  }
+
+  private async getSessionRevisionLookup(sessions: CodexSession[]): Promise<Map<string, string>> {
+    const revisions = await Promise.all(
+      sessions.map(async (session) => {
+        const revision = await this.getSessionFileRevision(session.filePath);
+        return [session.filePath, revision] as const;
+      }),
+    );
+
+    return new Map(revisions);
   }
 
   private async findSessionById(sessionId: string): Promise<CodexSession | null> {

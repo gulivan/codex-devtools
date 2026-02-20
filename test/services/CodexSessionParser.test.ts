@@ -163,6 +163,105 @@ describe('CodexSessionParser', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('deduplicates repeated token_count events with identical cumulative totals', async () => {
+    const { dir, filePath } = createTempSessionFile([
+      {
+        type: 'session_meta',
+        timestamp: '2026-02-18T22:00:00.000Z',
+        payload: {
+          id: 'session-dedupe',
+          cwd: '/repo/project-dedupe',
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-18T22:00:01.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 80,
+              output_tokens: 10,
+              reasoning_output_tokens: 4,
+              total_tokens: 110,
+            },
+            last_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 80,
+              output_tokens: 10,
+              reasoning_output_tokens: 4,
+              total_tokens: 110,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-18T22:00:02.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 80,
+              output_tokens: 10,
+              reasoning_output_tokens: 4,
+              total_tokens: 110,
+            },
+            last_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 80,
+              output_tokens: 10,
+              reasoning_output_tokens: 4,
+              total_tokens: 110,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-18T22:00:03.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 145,
+              cached_input_tokens: 105,
+              output_tokens: 18,
+              reasoning_output_tokens: 9,
+              total_tokens: 163,
+            },
+            last_token_usage: {
+              input_tokens: 45,
+              cached_input_tokens: 25,
+              output_tokens: 8,
+              reasoning_output_tokens: 5,
+              total_tokens: 53,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+    ]);
+
+    const parser = new CodexSessionParser();
+    const parsed = await parser.parseSessionFile(filePath);
+
+    expect(parsed.metrics.inputTokens).toBe(145);
+    expect(parsed.metrics.cachedTokens).toBe(105);
+    expect(parsed.metrics.outputTokens).toBe(18);
+    expect(parsed.metrics.reasoningTokens).toBe(9);
+    expect(parsed.metrics.totalTokens).toBe(163);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('parses compacted/compaction entries and context_compacted event messages', async () => {
     const { dir, filePath } = createTempSessionFile([
       {

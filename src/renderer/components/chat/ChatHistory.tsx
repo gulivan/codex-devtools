@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppStore } from '@renderer/store';
 import {
@@ -14,6 +14,12 @@ import { UserChatGroup } from './UserChatGroup';
 
 interface ChatHistoryProps {
   sessionId?: string;
+}
+
+interface SessionTokenStats {
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 function extractCollaborationModeLabel(content: string): string {
@@ -49,6 +55,18 @@ function getPreludeHint(kind: CodexBootstrapMessageKind): string {
   }
 }
 
+function buildSessionTokenStats(): SessionTokenStats {
+  return {
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+  };
+}
+
+function buildSystemPreludeKey(timestamp: string, rowIndex: number): string {
+  return `${timestamp}-${rowIndex}`;
+}
+
 export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
   const { chunks, chunksLoading, chunksSessionId, sessions } = useAppStore((state) => ({
     chunks: state.chunks,
@@ -65,8 +83,48 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
     estimateSize: () => 168,
     overscan: 6,
   });
+  const [expandedPreludeKeys, setExpandedPreludeKeys] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
 
   const virtualRows = rowVirtualizer.getVirtualItems();
+
+  const remeasureVisibleRows = useCallback((): void => {
+    rowVirtualizer.measure();
+
+    const parent = parentRef.current;
+    if (!parent) {
+      return;
+    }
+
+    for (const row of rowVirtualizer.getVirtualItems()) {
+      const element = parent.querySelector<HTMLElement>(`[data-index="${row.index}"]`);
+      if (!element) {
+        continue;
+      }
+
+      rowVirtualizer.measureElement(element);
+    }
+  }, [rowVirtualizer]);
+
+  const toggleSystemPrelude = useCallback((preludeKey: string): void => {
+    setExpandedPreludeKeys((current) => {
+      const next = new Set(current);
+      if (next.has(preludeKey)) {
+        next.delete(preludeKey);
+      } else {
+        next.add(preludeKey);
+      }
+
+      return next;
+    });
+    remeasureVisibleRows();
+    notifyChatLayoutInvalidated();
+  }, [remeasureVisibleRows]);
+
+  useEffect(() => {
+    setExpandedPreludeKeys(new Set<string>());
+  }, [sessionId]);
 
   useEffect(() => {
     const container = parentRef.current;
@@ -87,17 +145,42 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
     }
 
     const handleLayoutInvalidation = (): void => {
-      rowVirtualizer.measure();
+      remeasureVisibleRows();
+
+      requestAnimationFrame(() => {
+        remeasureVisibleRows();
+      });
     };
 
     window.addEventListener(CHAT_LAYOUT_INVALIDATED_EVENT, handleLayoutInvalidation);
     return () => {
       window.removeEventListener(CHAT_LAYOUT_INVALIDATED_EVENT, handleLayoutInvalidation);
     };
-  }, [rowVirtualizer]);
+  }, [remeasureVisibleRows]);
+
+  useEffect(() => {
+    remeasureVisibleRows();
+    const raf = requestAnimationFrame(() => {
+      remeasureVisibleRows();
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [chunks, expandedPreludeKeys, remeasureVisibleRows]);
 
   const hasChunks = chunks.length > 0;
   const isLoading = chunksLoading && chunksSessionId === sessionId;
+  const sessionTokenStats = useMemo(() => {
+    return chunks.reduce<SessionTokenStats>((totals, chunk) => {
+      if (chunk.type !== 'ai') {
+        return totals;
+      }
+
+      totals.totalTokens += chunk.metrics.totalTokens ?? 0;
+      totals.inputTokens += chunk.metrics.inputTokens ?? 0;
+      totals.outputTokens += chunk.metrics.outputTokens ?? 0;
+      return totals;
+    }, buildSessionTokenStats());
+  }, [chunks]);
   const initialModelUsage = useMemo(() => {
     if (!sessionId) {
       return null;
@@ -139,19 +222,33 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
 
     return (
       <>
-        {initialModelUsage ? (
-          <div className="chat-model-summary">
-            <span className="chat-model-summary-label">
-              Initial model: <code>{initialModelUsage.model}</code>
-              {initialModelUsage.reasoningEffort !== 'unknown' ? (
-                <>
-                  {' '}
-                  <code>{initialModelUsage.reasoningEffort}</code>
-                </>
-              ) : null}
+        <div className="chat-session-token-sticky">
+          <div className="chat-session-token-strip" aria-label="Session token totals and initial model">
+            {initialModelUsage ? (
+              <span className="chat-session-token-pair">
+                <span className="chat-session-token-key">Model:</span>
+                <span className="chat-session-token-value">
+                  {initialModelUsage.model}
+                  {initialModelUsage.reasoningEffort !== 'unknown'
+                    ? ` (${initialModelUsage.reasoningEffort})`
+                    : ''}
+                </span>
+              </span>
+            ) : null}
+            <span className="chat-session-token-pair">
+              <span className="chat-session-token-key">In:</span>
+              <span className="chat-session-token-value">{sessionTokenStats.inputTokens.toLocaleString()}</span>
+            </span>
+            <span className="chat-session-token-pair">
+              <span className="chat-session-token-key">Out:</span>
+              <span className="chat-session-token-value">{sessionTokenStats.outputTokens.toLocaleString()}</span>
+            </span>
+            <span className="chat-session-token-pair">
+              <span className="chat-session-token-key">Total:</span>
+              <span className="chat-session-token-value">{sessionTokenStats.totalTokens.toLocaleString()}</span>
             </span>
           </div>
-        ) : null}
+        </div>
         <div
           style={{
             height: `${rowVirtualizer.getTotalSize()}px`,
@@ -167,6 +264,14 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
 
             const systemPreludeKind =
               chunk.type === 'system' ? classifyCodexBootstrapMessage(chunk.content) : null;
+            const systemPreludeKey =
+              chunk.type === 'system' &&
+              systemPreludeKind &&
+              systemPreludeKind !== 'collaboration_mode'
+                ? buildSystemPreludeKey(chunk.timestamp, virtualRow.index)
+                : null;
+            const isSystemPreludeExpanded =
+              systemPreludeKey !== null && expandedPreludeKeys.has(systemPreludeKey);
 
             const key = `${chunk.type}-${chunk.timestamp}-${virtualRow.index}`;
 
@@ -195,18 +300,30 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
                         </span>
                       </div>
                     ) : (
-                      <details
-                        className={`chat-system-prelude ${systemPreludeKind}`}
-                        onToggle={notifyChatLayoutInvalidated}
+                      <section
+                        className={`chat-system-prelude ${systemPreludeKind}${
+                          isSystemPreludeExpanded ? ' open' : ''
+                        }`}
                       >
-                        <summary className="chat-system-prelude-summary">
+                        <button
+                          type="button"
+                          className="chat-system-prelude-summary"
+                          aria-expanded={isSystemPreludeExpanded}
+                          onClick={() => {
+                            if (systemPreludeKey) {
+                              toggleSystemPrelude(systemPreludeKey);
+                            }
+                          }}
+                        >
                           <span>{getPreludeLabel(systemPreludeKind)}</span>
                           <span className="chat-system-prelude-summary-hint">
                             {getPreludeHint(systemPreludeKind)}
                           </span>
-                        </summary>
-                        <pre className="chat-system-prelude-content">{chunk.content}</pre>
-                      </details>
+                        </button>
+                        {isSystemPreludeExpanded ? (
+                          <pre className="chat-system-prelude-content">{chunk.content}</pre>
+                        ) : null}
+                      </section>
                     )
                   ) : (
                     <div className="chat-system-message">
@@ -244,7 +361,20 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
         </div>
       </>
     );
-  }, [chunks, hasChunks, initialModelUsage, isLoading, rowVirtualizer, virtualRows]);
+  }, [
+    chunks,
+    hasChunks,
+    initialModelUsage,
+    isLoading,
+    rowVirtualizer,
+    sessionTokenStats.inputTokens,
+    sessionTokenStats.outputTokens,
+    sessionTokenStats.totalTokens,
+    expandedPreludeKeys,
+    remeasureVisibleRows,
+    toggleSystemPrelude,
+    virtualRows,
+  ]);
 
   return (
     <div className="chat-shell" ref={parentRef}>

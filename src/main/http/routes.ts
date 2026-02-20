@@ -5,6 +5,7 @@ import { registerEventRoutes } from './events';
 import { registerProjectRoutes } from './projects';
 import { registerSearchRoutes } from './search';
 import { registerSessionRoutes } from './sessions';
+import { registerStatsRoutes } from './stats';
 import { registerUtilityRoutes } from './utility';
 
 import type { CodexServiceContext } from '@main/services/infrastructure';
@@ -20,6 +21,7 @@ export interface HttpRouteServices {
 export const registerHttpRoutes = (app: FastifyInstance, services: HttpRouteServices): void => {
   registerProjectRoutes(app, services.serviceContext);
   registerSessionRoutes(app, services.serviceContext);
+  registerStatsRoutes(app, services.serviceContext);
   registerSearchRoutes(app, services.serviceContext);
   registerConfigRoutes(app, services.serviceContext);
   registerUtilityRoutes(app, services.getVersion);

@@ -6,6 +6,7 @@ import type { AppState, AppTab } from '../types';
 
 export const DASHBOARD_TAB_ID = 'dashboard';
 export const SETTINGS_TAB_ID = 'settings';
+export const STATS_TAB_ID = 'stats';
 
 function createSessionTabId(sessionId: string): string {
   return `session:${sessionId}`;
@@ -20,6 +21,7 @@ export interface TabSlice {
   activeTabId: string;
   openSessionTab: (session: CodexSession, previewLabel?: string) => void;
   openDashboardTab: () => void;
+  openStatsTab: () => void;
   openSettingsTab: () => void;
   setActiveTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
@@ -58,6 +60,11 @@ export const createTabSlice = (_client: RendererApi): StateCreator<AppState, [],
     set({ activeTabId: DASHBOARD_TAB_ID, activeSessionId: null });
   },
 
+  openStatsTab: () => {
+    set({ activeTabId: STATS_TAB_ID, activeSessionId: null });
+    void get().fetchStats(get().statsScope);
+  },
+
   openSettingsTab: () => {
     set({ activeTabId: SETTINGS_TAB_ID, activeSessionId: null });
   },
@@ -75,6 +82,10 @@ export const createTabSlice = (_client: RendererApi): StateCreator<AppState, [],
 
     if (tab.type === 'session' && tab.sessionId) {
       void get().fetchChunks(tab.sessionId);
+    }
+
+    if (tab.type === 'stats') {
+      void get().fetchStats(get().statsScope);
     }
   },
 

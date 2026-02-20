@@ -6,6 +6,7 @@ import { createConversationSlice } from './slices/conversationSlice';
 import { createPaneSlice } from './slices/paneSlice';
 import { createProjectSlice } from './slices/projectSlice';
 import { createSessionSlice } from './slices/sessionSlice';
+import { createStatsSlice } from './slices/statsSlice';
 import { createTabSlice } from './slices/tabSlice';
 import { createUISlice } from './slices/uiSlice';
 
@@ -15,6 +16,7 @@ export const createAppStore = (client: RendererApi = api) =>
   create<AppState>()((...args) => ({
     ...createProjectSlice(client)(...args),
     ...createSessionSlice(client)(...args),
+    ...createStatsSlice(client)(...args),
     ...createConversationSlice(client)(...args),
     ...createConfigSlice(client)(...args),
     ...createTabSlice(client)(...args),
@@ -30,6 +32,7 @@ interface StoreAccess {
 
 const REFRESH_DEBOUNCE_MS = 120;
 const FALLBACK_POLL_INTERVAL_MS = 5000;
+const STATS_TAB_ID = 'stats';
 
 export function initializeEventListeners(
   store: StoreAccess = useAppStore,
@@ -61,6 +64,10 @@ export function initializeEventListeners(
       if (state.activeSessionId) {
         void state.fetchChunks(state.activeSessionId);
       }
+
+      if (state.activeTabId === STATS_TAB_ID) {
+        void state.fetchStats(state.statsScope, { background: true });
+      }
     }, REFRESH_DEBOUNCE_MS);
   });
 
@@ -91,6 +98,7 @@ export function initializeEventListeners(
           })
         : Promise.resolve(),
       state.activeSessionId ? state.fetchChunks(state.activeSessionId) : Promise.resolve(),
+      state.activeTabId === STATS_TAB_ID ? state.fetchStats(state.statsScope, { background: true }) : Promise.resolve(),
     ]).finally(() => {
       polling = false;
     });
