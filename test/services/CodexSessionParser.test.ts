@@ -262,6 +262,81 @@ describe('CodexSessionParser', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('keeps non-negative per-field deltas when one cumulative token counter decreases', async () => {
+    const { dir, filePath } = createTempSessionFile([
+      {
+        type: 'session_meta',
+        timestamp: '2026-02-18T22:00:00.000Z',
+        payload: {
+          id: 'session-mixed-delta',
+          cwd: '/repo/project-mixed',
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-18T22:00:01.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 50,
+              output_tokens: 20,
+              reasoning_output_tokens: 10,
+              total_tokens: 120,
+            },
+            last_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 50,
+              output_tokens: 20,
+              reasoning_output_tokens: 10,
+              total_tokens: 120,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-18T22:00:02.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 130,
+              cached_input_tokens: 40,
+              output_tokens: 40,
+              reasoning_output_tokens: 9,
+              total_tokens: 140,
+            },
+            // If fallback is used for this event, input would be overcounted to 130 again.
+            last_token_usage: {
+              input_tokens: 130,
+              cached_input_tokens: 40,
+              output_tokens: 20,
+              reasoning_output_tokens: 0,
+              total_tokens: 20,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+    ]);
+
+    const parser = new CodexSessionParser();
+    const parsed = await parser.parseSessionFile(filePath);
+
+    expect(parsed.metrics.inputTokens).toBe(130);
+    expect(parsed.metrics.cachedTokens).toBe(50);
+    expect(parsed.metrics.outputTokens).toBe(40);
+    expect(parsed.metrics.reasoningTokens).toBe(10);
+    expect(parsed.metrics.totalTokens).toBe(140);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('parses compacted/compaction entries and context_compacted event messages', async () => {
     const { dir, filePath } = createTempSessionFile([
       {

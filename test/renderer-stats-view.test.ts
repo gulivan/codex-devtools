@@ -89,9 +89,36 @@ describe('StatsView', () => {
     mockStoreState.setStatsScope.mockClear();
   });
 
-  it('does not render NaN widths when daily output tokens are zero', () => {
+  it('renders zero width bars when daily output tokens are zero', () => {
     const html = renderToStaticMarkup(createElement(StatsView));
     expect(html).not.toContain('NaN%');
-    expect(html).toContain('width:6%');
+    expect(html).toContain('width:0%');
+  });
+
+  it('renders output calendar in a separate section without legend text', () => {
+    const html = renderToStaticMarkup(createElement(StatsView));
+    expect(html).toContain('<span class="stat-label">Total tokens</span>');
+    expect(html).toContain('<span class="stat-label">In</span>');
+    expect(html).toContain('<span class="stat-label">Out</span>');
+    expect(html).toContain('title="Cached: 0 | Uncached: 10"');
+    expect(html).not.toContain('Input tokens (all)');
+    expect(html).not.toContain('Input tokens (uncached)');
+    expect(html).not.toContain('Input tokens (cached)');
+    expect(html).not.toContain('Uncached + output');
+    expect(html).not.toContain('<span class="stat-label">Sessions</span>');
+    expect(html).not.toContain('<span class="stat-label">Active time</span>');
+    expect(html).toContain('Output calendar');
+    expect(html).toContain('stats-calendar-metric');
+    expect(html).toContain('Total tokens');
+    expect(html).toContain('Input tokens');
+    expect(html).toContain('Output tokens');
+    expect(html).toContain('Events');
+    expect(html).toContain('Sessions');
+    expect(html).not.toContain('Hover a square to see its value.');
+    expect(html).not.toContain('GitHub-style output calendar');
+    expect(html).not.toContain('Contribution intensity legend');
+    expect(html).not.toContain('1 weeks');
+    expect(html).toContain('stats-contrib-cell level-0 is-empty');
+    expect(html).toContain('2026-02-18 • 0 output tokens');
   });
 });

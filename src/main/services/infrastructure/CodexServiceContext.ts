@@ -47,12 +47,12 @@ export interface CodexServiceContextOptions {
   cacheTtlMinutes?: number;
 }
 
-const DETAIL_CACHE_PREFIX = 'detail-v2';
-const CHUNKS_CACHE_PREFIX = 'chunks-v2';
+const DETAIL_CACHE_PREFIX = 'detail-v3';
+const CHUNKS_CACHE_PREFIX = 'chunks-v4';
 const SESSIONS_CACHE_PREFIX = 'sessions';
-const STATS_CACHE_PREFIX = 'stats-v1';
+const STATS_CACHE_PREFIX = 'stats-v3';
 const UNKNOWN_REVISION = 'unknown-revision';
-const TOKEN_COMPUTATION_VERSION = 2;
+const TOKEN_COMPUTATION_VERSION = 4;
 
 function hasCompactionSignals(entries: CodexLogEntry[]): boolean {
   return entries.some(

@@ -21,6 +21,7 @@ function buildExecution(callId: string, name: string, cmd: string): CodexToolExe
     duration: 10,
     tokenUsage: {
       inputTokens: 10,
+      cachedInputTokens: 0,
       outputTokens: 5,
     },
   };

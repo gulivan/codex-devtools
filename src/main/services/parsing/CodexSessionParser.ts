@@ -11,12 +11,11 @@ import {
   type SessionMetaEntry,
   type TokenUsage,
   type TurnContextEntry,
-  diffTokenUsage,
   isCodexLogEntry,
   isEventMsgEntry,
   isMessagePayload,
   isResponseItemEntry,
-  isSameTokenUsage,
+  resolveTokenUsage,
   isSessionMetaEntry,
   isTokenCountPayload,
   isTurnContextEntry,
@@ -135,22 +134,12 @@ export class CodexSessionParser {
         eventMessages.push(entry);
         if (isTokenCountPayload(entry.payload) && entry.payload.info) {
           const currentTotal = entry.payload.info.total_token_usage;
-          let usage: TokenUsage;
-          if (previousTotalUsage) {
-            const delta = diffTokenUsage(previousTotalUsage, currentTotal);
-            if (delta) {
-              usage = delta;
-            } else if (isSameTokenUsage(previousTotalUsage, currentTotal)) {
-              previousTotalUsage = currentTotal;
-              continue;
-            } else {
-              usage = entry.payload.info.last_token_usage;
-            }
-          } else {
-            usage = currentTotal;
-          }
+          const usage = resolveTokenUsage(previousTotalUsage, currentTotal, entry.payload.info.last_token_usage);
 
           previousTotalUsage = currentTotal;
+          if (!usage) {
+            continue;
+          }
 
           metrics.inputTokens += usage.input_tokens;
           metrics.cachedTokens += usage.cached_input_tokens;

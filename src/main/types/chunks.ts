@@ -2,6 +2,7 @@ import { type CodexSessionMetrics } from './domain';
 
 export interface CodexToolTokenUsage {
   inputTokens: number;
+  cachedInputTokens: number;
   outputTokens: number;
 }
 

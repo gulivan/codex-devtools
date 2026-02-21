@@ -94,11 +94,307 @@ describe('CodexChunkBuilder', () => {
     expect(chunks[1].toolExecutions[0].functionOutput?.isError).toBe(true);
     expect(chunks[1].toolExecutions[0].tokenUsage).toEqual({
       inputTokens: 20,
+      cachedInputTokens: 3,
       outputTokens: 7,
     });
     expect(chunks[1].metrics.totalTokens).toBe(31);
     expect(chunks[1].metrics.toolCallCount).toBe(1);
     expect(chunks[1].duration).toBeGreaterThan(0);
+  });
+
+  it('uses cumulative token_count deltas for per-tool usage and chunk metrics', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T10:00:00.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'run checks' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T10:00:01.000Z',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: '{"cmd":"pnpm lint"}',
+          call_id: 'call-cumulative-1',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T10:00:02.000Z',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-cumulative-1',
+          output: '{"metadata":{"exit_code":0}}',
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-20T10:00:03.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 0,
+              output_tokens: 20,
+              reasoning_output_tokens: 0,
+              total_tokens: 120,
+            },
+            // Some JSONL traces emit cumulative last_token_usage values too.
+            last_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 0,
+              output_tokens: 20,
+              reasoning_output_tokens: 0,
+              total_tokens: 120,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T10:00:04.000Z',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: '{"cmd":"pnpm test"}',
+          call_id: 'call-cumulative-2',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T10:00:05.000Z',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-cumulative-2',
+          output: '{"metadata":{"exit_code":0}}',
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-20T10:00:06.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 0,
+              output_tokens: 20,
+              reasoning_output_tokens: 0,
+              total_tokens: 120,
+            },
+            last_token_usage: {
+              input_tokens: 100,
+              cached_input_tokens: 0,
+              output_tokens: 20,
+              reasoning_output_tokens: 0,
+              total_tokens: 120,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-20T10:00:07.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 130,
+              cached_input_tokens: 0,
+              output_tokens: 25,
+              reasoning_output_tokens: 0,
+              total_tokens: 155,
+            },
+            last_token_usage: {
+              input_tokens: 130,
+              cached_input_tokens: 0,
+              output_tokens: 25,
+              reasoning_output_tokens: 0,
+              total_tokens: 155,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T10:00:08.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Checks complete.' }],
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].type).toBe('user');
+    expect(chunks[1].type).toBe('ai');
+    if (chunks[1].type !== 'ai') {
+      throw new Error('Expected AI chunk');
+    }
+
+    expect(chunks[1].toolExecutions).toHaveLength(2);
+    expect(chunks[1].toolExecutions[0].tokenUsage).toEqual({
+      inputTokens: 100,
+      cachedInputTokens: 0,
+      outputTokens: 20,
+    });
+    expect(chunks[1].toolExecutions[1].tokenUsage).toEqual({
+      inputTokens: 30,
+      cachedInputTokens: 0,
+      outputTokens: 5,
+    });
+    expect(chunks[1].metrics.inputTokens).toBe(130);
+    expect(chunks[1].metrics.outputTokens).toBe(25);
+    expect(chunks[1].metrics.totalTokens).toBe(155);
+  });
+
+  it('keeps per-tool input deltas when cached cumulative totals decrease between token events', () => {
+    const entries: CodexLogEntry[] = [
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T11:00:00.000Z',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'run commands' }],
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T11:00:01.000Z',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: '{"cmd":"command one"}',
+          call_id: 'call-mixed-1',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T11:00:02.000Z',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-mixed-1',
+          output: '{"metadata":{"exit_code":0}}',
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-20T11:00:03.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 155_806,
+              cached_input_tokens: 50_000,
+              output_tokens: 1_139,
+              reasoning_output_tokens: 0,
+              total_tokens: 156_945,
+            },
+            last_token_usage: {
+              input_tokens: 155_806,
+              cached_input_tokens: 50_000,
+              output_tokens: 1_139,
+              reasoning_output_tokens: 0,
+              total_tokens: 156_945,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T11:00:04.000Z',
+        payload: {
+          type: 'function_call',
+          name: 'exec_command',
+          arguments: '{"cmd":"command two"}',
+          call_id: 'call-mixed-2',
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T11:00:05.000Z',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'call-mixed-2',
+          output: '{"metadata":{"exit_code":0}}',
+        },
+      },
+      {
+        type: 'event_msg',
+        timestamp: '2026-02-20T11:00:06.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: {
+              input_tokens: 157_067,
+              cached_input_tokens: 49_900,
+              output_tokens: 1_360,
+              reasoning_output_tokens: 0,
+              total_tokens: 158_327,
+            },
+            // Mirrors traces where input appears cumulative while output remains per-step.
+            last_token_usage: {
+              input_tokens: 157_067,
+              cached_input_tokens: 49_900,
+              output_tokens: 221,
+              reasoning_output_tokens: 0,
+              total_tokens: 1_382,
+            },
+            model_context_window: 200_000,
+          },
+          rate_limits: null,
+        },
+      },
+      {
+        type: 'response_item',
+        timestamp: '2026-02-20T11:00:07.000Z',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'done' }],
+        },
+      },
+    ];
+
+    const builder = new CodexChunkBuilder();
+    const chunks = builder.buildChunks(entries);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[1].type).toBe('ai');
+    if (chunks[1].type !== 'ai') {
+      throw new Error('Expected AI chunk');
+    }
+
+    expect(chunks[1].toolExecutions).toHaveLength(2);
+    expect(chunks[1].toolExecutions[0].tokenUsage).toEqual({
+      inputTokens: 155_806,
+      cachedInputTokens: 50_000,
+      outputTokens: 1_139,
+    });
+    expect(chunks[1].toolExecutions[1].tokenUsage).toEqual({
+      inputTokens: 1_261,
+      cachedInputTokens: 0,
+      outputTokens: 221,
+    });
   });
 
   it('prefers response items over duplicate event messages for user and assistant text', () => {

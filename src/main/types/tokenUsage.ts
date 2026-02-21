@@ -9,26 +9,23 @@ export function diffTokenUsage(previous: TokenUsage, current: TokenUsage): Token
     total_tokens: current.total_tokens - previous.total_tokens,
   };
 
-  const hasNegative = (
-    delta.input_tokens < 0
-    || delta.cached_input_tokens < 0
-    || delta.output_tokens < 0
-    || delta.reasoning_output_tokens < 0
-    || delta.total_tokens < 0
-  );
-  if (hasNegative) {
-    return null;
-  }
+  const normalized: TokenUsage = {
+    input_tokens: Math.max(delta.input_tokens, 0),
+    cached_input_tokens: Math.max(delta.cached_input_tokens, 0),
+    output_tokens: Math.max(delta.output_tokens, 0),
+    reasoning_output_tokens: Math.max(delta.reasoning_output_tokens, 0),
+    total_tokens: Math.max(delta.total_tokens, 0),
+  };
 
-  const isDuplicate = (
-    delta.input_tokens === 0
-    && delta.cached_input_tokens === 0
-    && delta.output_tokens === 0
-    && delta.reasoning_output_tokens === 0
-    && delta.total_tokens === 0
+  const hasAnyPositive = (
+    normalized.input_tokens > 0
+    || normalized.cached_input_tokens > 0
+    || normalized.output_tokens > 0
+    || normalized.reasoning_output_tokens > 0
+    || normalized.total_tokens > 0
   );
 
-  return isDuplicate ? null : delta;
+  return hasAnyPositive ? normalized : null;
 }
 
 export function isSameTokenUsage(left: TokenUsage, right: TokenUsage): boolean {
@@ -39,4 +36,25 @@ export function isSameTokenUsage(left: TokenUsage, right: TokenUsage): boolean {
     && left.reasoning_output_tokens === right.reasoning_output_tokens
     && left.total_tokens === right.total_tokens
   );
+}
+
+export function resolveTokenUsage(
+  previousTotalUsage: TokenUsage | null,
+  currentTotalUsage: TokenUsage,
+  fallbackUsage: TokenUsage,
+): TokenUsage | null {
+  if (!previousTotalUsage) {
+    return fallbackUsage;
+  }
+
+  const delta = diffTokenUsage(previousTotalUsage, currentTotalUsage);
+  if (delta) {
+    return delta;
+  }
+
+  if (isSameTokenUsage(previousTotalUsage, currentTotalUsage)) {
+    return null;
+  }
+
+  return fallbackUsage;
 }

@@ -7,11 +7,11 @@ import {
   type CodexLogEntry,
   type CodexSessionMetrics,
   type CodexToolExecution,
+  type TokenUsage,
   type UserChunk,
   type UserAttachment,
   type UserAttachmentKind,
   type UserAttachmentPreviewReason,
-  type EventMsgEntry,
   getContentBlockText,
   isAgentMessagePayload,
   isAgentReasoningPayload,
@@ -24,6 +24,7 @@ import {
   isMessagePayload,
   isReasoningPayload,
   isResponseItemEntry,
+  resolveTokenUsage,
   isTokenCountPayload,
   isTurnContextEntry,
   isUserMessagePayload,
@@ -797,6 +798,7 @@ export class CodexChunkBuilder {
     let pendingUser: PendingUserEvent | null = null;
     let lastSeenModelUsage: ModelUsageState | null = null;
     let lastSeenCollaborationMode = '';
+    let previousTotalUsage: TokenUsage | null = null;
 
     const flushAIChunk = (): void => {
       if (!currentAI) {
@@ -1088,9 +1090,21 @@ export class CodexChunkBuilder {
         continue;
       }
 
-      if (isEventMsgEntry(entry) && isTokenCountPayload(entry.payload)) {
-        this.accumulateMetricsFromTokenEvent(ai.metrics, entry);
-        this.assignTokenUsageToPendingTool(ai, entry);
+      if (isEventMsgEntry(entry) && isTokenCountPayload(entry.payload) && entry.payload.info) {
+        const currentTotalUsage = entry.payload.info.total_token_usage;
+        const usage = resolveTokenUsage(
+          previousTotalUsage,
+          currentTotalUsage,
+          entry.payload.info.last_token_usage,
+        );
+        previousTotalUsage = currentTotalUsage;
+
+        if (!usage) {
+          continue;
+        }
+
+        this.accumulateMetricsFromTokenUsage(ai.metrics, usage);
+        this.assignTokenUsageToPendingTool(ai, usage);
       }
     }
 
@@ -1099,15 +1113,10 @@ export class CodexChunkBuilder {
     return chunks;
   }
 
-  private accumulateMetricsFromTokenEvent(
+  private accumulateMetricsFromTokenUsage(
     target: Partial<CodexSessionMetrics>,
-    entry: EventMsgEntry,
+    usage: TokenUsage,
   ): void {
-    if (!isTokenCountPayload(entry.payload) || !entry.payload.info) {
-      return;
-    }
-
-    const usage = entry.payload.info.last_token_usage;
     target.inputTokens = (target.inputTokens ?? 0) + usage.input_tokens;
     target.cachedTokens = (target.cachedTokens ?? 0) + usage.cached_input_tokens;
     target.outputTokens = (target.outputTokens ?? 0) + usage.output_tokens;
@@ -1115,11 +1124,7 @@ export class CodexChunkBuilder {
     target.totalTokens = (target.totalTokens ?? 0) + usage.total_tokens;
   }
 
-  private assignTokenUsageToPendingTool(ai: InProgressAIChunk, entry: EventMsgEntry): void {
-    if (!isTokenCountPayload(entry.payload) || !entry.payload.info) {
-      return;
-    }
-
+  private assignTokenUsageToPendingTool(ai: InProgressAIChunk, usage: TokenUsage): void {
     if (ai.pendingUsageToolIndex === null) {
       return;
     }
@@ -1130,13 +1135,14 @@ export class CodexChunkBuilder {
       return;
     }
 
-    const usage = entry.payload.info.last_token_usage;
     if (tool.tokenUsage) {
       tool.tokenUsage.inputTokens += usage.input_tokens;
+      tool.tokenUsage.cachedInputTokens += usage.cached_input_tokens;
       tool.tokenUsage.outputTokens += usage.output_tokens;
     } else {
       tool.tokenUsage = {
         inputTokens: usage.input_tokens,
+        cachedInputTokens: usage.cached_input_tokens,
         outputTokens: usage.output_tokens,
       };
     }

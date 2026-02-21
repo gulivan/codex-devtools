@@ -84,7 +84,10 @@ export const ExecutionTrace = ({ execution }: ExecutionTraceProps): JSX.Element 
   const commandPreview = useMemo(() => parseCommandPreview(execution), [execution]);
   const isTerminalCommand = useMemo(() => isTerminalCommandExecution(execution), [execution]);
   const tokenUsageLabel = execution.tokenUsage
-    ? `${execution.tokenUsage.inputTokens.toLocaleString()} in • ${execution.tokenUsage.outputTokens.toLocaleString()} out`
+    ? `${execution.tokenUsage.inputTokens.toLocaleString()} in (${(execution.tokenUsage.cachedInputTokens ?? 0).toLocaleString()} cached + ${Math.max(
+      execution.tokenUsage.inputTokens - (execution.tokenUsage.cachedInputTokens ?? 0),
+      0,
+    ).toLocaleString()} uncached) • ${execution.tokenUsage.outputTokens.toLocaleString()} out`
     : null;
   const formattedArguments = useMemo(
     () => prettyPrintJson(execution.functionCall.arguments),

@@ -11,9 +11,8 @@ import {
   type CodexStatsSummary,
   type CodexStatsTokenTotals,
   type TokenUsage,
-  diffTokenUsage,
   isEventMsgEntry,
-  isSameTokenUsage,
+  resolveTokenUsage,
   isTokenCountPayload,
   isTurnContextEntry,
 } from '@main/types';
@@ -287,22 +286,12 @@ export function buildSessionStatsRecord(
 
     const timestamp = parseTimestamp(entry.timestamp);
     const currentTotal = entry.payload.info.total_token_usage;
-    let usage: TokenUsage;
-    if (previousTotalUsage) {
-      const delta = diffTokenUsage(previousTotalUsage, currentTotal);
-      if (delta) {
-        usage = delta;
-      } else if (isSameTokenUsage(previousTotalUsage, currentTotal)) {
-        previousTotalUsage = currentTotal;
-        continue;
-      } else {
-        usage = entry.payload.info.last_token_usage;
-      }
-    } else {
-      usage = currentTotal;
-    }
+    const usage = resolveTokenUsage(previousTotalUsage, currentTotal, entry.payload.info.last_token_usage);
 
     previousTotalUsage = currentTotal;
+    if (!usage) {
+      continue;
+    }
 
     const usageTotals = tokenUsageToTotals(usage);
 
@@ -339,7 +328,7 @@ export function buildSessionStatsRecord(
   const lastActivity = parsed.entries[parsed.entries.length - 1]?.timestamp ?? parsed.session.startTime;
 
   return {
-    tokenComputationVersion: 2,
+    tokenComputationVersion: 4,
     sessionId: parsed.session.id,
     filePath: parsed.session.filePath,
     revision,

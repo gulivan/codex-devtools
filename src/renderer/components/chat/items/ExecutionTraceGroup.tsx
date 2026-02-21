@@ -25,6 +25,7 @@ export const ExecutionTraceGroup = ({
 
   const tokenTotals = useMemo(() => {
     let inputTokens = 0;
+    let cachedInputTokens = 0;
     let outputTokens = 0;
     let hasTokenUsage = false;
 
@@ -35,10 +36,11 @@ export const ExecutionTraceGroup = ({
 
       hasTokenUsage = true;
       inputTokens += execution.tokenUsage.inputTokens;
+      cachedInputTokens += execution.tokenUsage.cachedInputTokens ?? 0;
       outputTokens += execution.tokenUsage.outputTokens;
     }
 
-    return { hasTokenUsage, inputTokens, outputTokens };
+    return { hasTokenUsage, inputTokens, cachedInputTokens, outputTokens };
   }, [executions]);
 
   if (executions.length === 0) {
@@ -47,7 +49,10 @@ export const ExecutionTraceGroup = ({
 
   const countLabel = `${executions.length} command${executions.length === 1 ? '' : 's'}`;
   const tokenUsageLabel = tokenTotals.hasTokenUsage
-    ? `${tokenTotals.inputTokens.toLocaleString()} in • ${tokenTotals.outputTokens.toLocaleString()} out`
+    ? `${tokenTotals.inputTokens.toLocaleString()} in (${tokenTotals.cachedInputTokens.toLocaleString()} cached + ${Math.max(
+      tokenTotals.inputTokens - tokenTotals.cachedInputTokens,
+      0,
+    ).toLocaleString()} uncached) • ${tokenTotals.outputTokens.toLocaleString()} out`
     : null;
 
   return (
