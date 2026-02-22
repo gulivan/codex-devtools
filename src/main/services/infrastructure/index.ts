@@ -1,3 +1,4 @@
+export * from './AppUpdateChecker';
 export * from './ConfigManager';
 export * from './CodexServiceContext';
 export * from './DataCache';

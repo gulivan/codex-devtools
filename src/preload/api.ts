@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from './constants/channels';
 import type { CodexDevToolsConfig, CodexFileChangeEvent } from '@main/services/infrastructure';
 import type { CodexParsedSession } from '@main/services/parsing';
 import type {
+  CodexAppUpdateStatus,
   CodexChunk,
   CodexProject,
   CodexSearchSessionsResult,
@@ -24,6 +25,7 @@ export interface CodexDevtoolsApi {
   getConfig: () => Promise<CodexDevToolsConfig>;
   updateConfig: (key: keyof CodexDevToolsConfig, value: unknown) => Promise<CodexDevToolsConfig | null>;
   getAppVersion: () => Promise<string>;
+  checkAppUpdate: () => Promise<CodexAppUpdateStatus>;
   onFileChange: (callback: (event: CodexFileChangeEvent) => void) => () => void;
 }
 
@@ -41,6 +43,7 @@ export function createCodexDevtoolsApi(
     getConfig: () => renderer.invoke(IPC_CHANNELS.CONFIG_GET),
     updateConfig: (key, value) => renderer.invoke(IPC_CHANNELS.CONFIG_UPDATE, key, value),
     getAppVersion: () => renderer.invoke(IPC_CHANNELS.UTILITY_GET_APP_VERSION),
+    checkAppUpdate: () => renderer.invoke(IPC_CHANNELS.UTILITY_CHECK_APP_UPDATE),
     onFileChange: (callback) => {
       const listener = (_event: IpcRendererEvent, payload: unknown): void => {
         callback(payload as CodexFileChangeEvent);

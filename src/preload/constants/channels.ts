@@ -8,5 +8,6 @@ export const IPC_CHANNELS = {
   CONFIG_GET: 'config:get',
   CONFIG_UPDATE: 'config:update',
   UTILITY_GET_APP_VERSION: 'get-app-version',
+  UTILITY_CHECK_APP_UPDATE: 'check-app-update',
   EVENTS_FILE_CHANGE: 'file-change',
 } as const;

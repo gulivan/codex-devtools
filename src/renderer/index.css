@@ -827,6 +827,30 @@ select {
   justify-content: flex-end;
 }
 
+.settings-actions-split {
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-update-copy {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+}
+
+.settings-update-copy code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.settings-update-copy.is-error {
+  color: #fca5a5;
+}
+
+.settings-update-copy.is-success {
+  color: #86efac;
+}
+
 .empty-view {
   display: grid;
   gap: 8px;

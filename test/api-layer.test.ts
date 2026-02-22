@@ -397,6 +397,15 @@ describe('api layer', () => {
     registerHttpRoutes(app, {
       serviceContext,
       getVersion: () => '9.9.9',
+      getAppUpdateStatus: async () => ({
+        currentVersion: '9.9.9',
+        latestVersion: '10.0.0',
+        updateAvailable: true,
+        releaseUrl: 'https://github.com/gulivan/codex-devtools/releases/tag/v10.0.0',
+        checkedAt: '2026-02-22T00:00:00.000Z',
+        source: 'github',
+        error: null,
+      }),
     });
 
     const projectsResponse = await app.inject({ method: 'GET', url: '/projects' });
@@ -446,13 +455,29 @@ describe('api layer', () => {
     expect(versionResponse.statusCode).toBe(200);
     expect(versionResponse.body).toBe('9.9.9');
 
+    const appUpdateResponse = await app.inject({ method: 'GET', url: '/app-update' });
+    expect(appUpdateResponse.statusCode).toBe(200);
+    expect(JSON.parse(appUpdateResponse.body)?.updateAvailable).toBe(true);
+    expect(JSON.parse(appUpdateResponse.body)?.latestVersion).toBe('10.0.0');
+
     await app.close();
   });
 
   it('registers and removes IPC handlers', async () => {
     const ipcMainMock = new IpcMainMock();
 
-    initializeIpcHandlers(serviceContext, ipcMainMock as never, { getVersion: () => '1.2.3' });
+    initializeIpcHandlers(serviceContext, ipcMainMock as never, {
+      getVersion: () => '1.2.3',
+      getAppUpdateStatus: async () => ({
+        currentVersion: '1.2.3',
+        latestVersion: '1.3.0',
+        updateAvailable: true,
+        releaseUrl: 'https://github.com/gulivan/codex-devtools/releases/tag/v1.3.0',
+        checkedAt: '2026-02-22T00:00:00.000Z',
+        source: 'github',
+        error: null,
+      }),
+    });
 
     const projects = (await ipcMainMock.invoke(IPC_CHANNELS.SESSIONS_GET_PROJECTS)) as unknown[];
     expect(projects).toHaveLength(2);
@@ -481,6 +506,13 @@ describe('api layer', () => {
 
     const version = await ipcMainMock.invoke(IPC_CHANNELS.UTILITY_GET_APP_VERSION);
     expect(version).toBe('1.2.3');
+
+    const appUpdate = (await ipcMainMock.invoke(IPC_CHANNELS.UTILITY_CHECK_APP_UPDATE)) as {
+      updateAvailable?: boolean;
+      latestVersion?: string;
+    };
+    expect(appUpdate.updateAvailable).toBe(true);
+    expect(appUpdate.latestVersion).toBe('1.3.0');
 
     removeIpcHandlers(ipcMainMock as never);
     expect(ipcMainMock.size()).toBe(0);

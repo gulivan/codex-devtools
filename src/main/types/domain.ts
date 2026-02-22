@@ -138,6 +138,16 @@ export interface CodexStatsSummary {
   rates: Pick<CodexModelRateCard, 'updatedAt' | 'source'>;
 }
 
+export interface CodexAppUpdateStatus {
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string | null;
+  checkedAt: string;
+  source: 'github';
+  error: string | null;
+}
+
 export type CodexSearchMatchKind =
   | 'user'
   | 'assistant'

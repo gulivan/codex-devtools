@@ -1,7 +1,7 @@
 import type { CodexDevToolsConfig } from '../src/main/services/infrastructure/ConfigManager';
 
 import type { RendererApi } from '@renderer/api';
-import type { CodexStatsSummary } from '@main/types';
+import type { CodexAppUpdateStatus, CodexStatsSummary } from '@main/types';
 
 function createConfig(theme: 'system' | 'dark' | 'light' = 'dark'): CodexDevToolsConfig {
   return {
@@ -76,6 +76,7 @@ describe('renderer api adapter', () => {
       getConfig: vi.fn(),
       updateConfig: vi.fn(),
       getAppVersion: vi.fn(),
+      checkAppUpdate: vi.fn(),
       onFileChange: vi.fn(() => () => undefined),
     };
 
@@ -110,6 +111,22 @@ describe('renderer api adapter', () => {
         });
       }
 
+      if (url.endsWith('/app-update')) {
+        const updateStatus: CodexAppUpdateStatus = {
+          currentVersion: '0.1.0',
+          latestVersion: '0.2.0',
+          updateAvailable: true,
+          releaseUrl: 'https://github.com/gulivan/codex-devtools/releases/tag/v0.2.0',
+          checkedAt: '2026-02-22T00:00:00.000Z',
+          source: 'github',
+          error: null,
+        };
+        return new Response(JSON.stringify(updateStatus), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       throw new Error(`Unhandled URL in test: ${url}`);
     });
 
@@ -128,6 +145,8 @@ describe('renderer api adapter', () => {
     expect(projects).toHaveLength(1);
 
     await api.updateConfig('display', { theme: 'light' });
+    const updateStatus = await api.checkAppUpdate();
+    expect(updateStatus.updateAvailable).toBe(true);
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:3456/config',

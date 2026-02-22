@@ -10,12 +10,14 @@ import {
 } from './utility';
 
 import type { CodexServiceContext } from '@main/services/infrastructure';
+import type { CodexAppUpdateStatus } from '@main/types';
 import type { IpcMain } from 'electron';
 
 const logger = createLogger('IPC:handlers');
 
 export interface IpcInitializationOptions {
   getVersion?: () => string;
+  getAppUpdateStatus?: () => Promise<CodexAppUpdateStatus>;
 }
 
 export const initializeIpcHandlers = (
@@ -26,7 +28,10 @@ export const initializeIpcHandlers = (
   initializeSessionHandlers(serviceContext);
   initializeSearchHandlers(serviceContext);
   initializeConfigHandlers(serviceContext);
-  initializeUtilityHandlers({ getVersion: options.getVersion });
+  initializeUtilityHandlers({
+    getVersion: options.getVersion,
+    getAppUpdateStatus: options.getAppUpdateStatus,
+  });
 
   registerSessionHandlers(targetIpcMain);
   registerSearchHandlers(targetIpcMain);

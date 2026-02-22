@@ -1,6 +1,7 @@
 import type { CodexDevToolsConfig, CodexFileChangeEvent } from '@main/services/infrastructure';
 import type { CodexParsedSession } from '@main/services/parsing';
 import type {
+  CodexAppUpdateStatus,
   CodexChunk,
   CodexProject,
   CodexSearchSessionsResult,
@@ -19,6 +20,7 @@ export interface RendererApi {
   getConfig: () => Promise<CodexDevToolsConfig>;
   updateConfig: (key: keyof CodexDevToolsConfig, value: unknown) => Promise<CodexDevToolsConfig | null>;
   getAppVersion: () => Promise<string>;
+  checkAppUpdate: () => Promise<CodexAppUpdateStatus>;
   onFileChange: (callback: (event: CodexFileChangeEvent) => void) => () => void;
 }
 
@@ -121,6 +123,10 @@ class HttpApiClient implements RendererApi {
     }
 
     return response.text();
+  }
+
+  async checkAppUpdate(): Promise<CodexAppUpdateStatus> {
+    return this.get<CodexAppUpdateStatus>('/app-update');
   }
 
   onFileChange(callback: (event: CodexFileChangeEvent) => void): () => void {

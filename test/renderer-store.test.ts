@@ -124,6 +124,15 @@ function createApiMock(): RendererApi {
     getConfig: vi.fn(async () => createConfig()),
     updateConfig: vi.fn(async (_key, value) => createConfig((value as { theme?: 'system' | 'dark' | 'light' }).theme ?? 'dark')),
     getAppVersion: vi.fn(async () => '0.1.0'),
+    checkAppUpdate: vi.fn(async () => ({
+      currentVersion: '0.1.0',
+      latestVersion: '0.1.0',
+      updateAvailable: false,
+      releaseUrl: 'https://github.com/gulivan/codex-devtools/releases/latest',
+      checkedAt: '2026-02-22T00:00:00.000Z',
+      source: 'github' as const,
+      error: null,
+    })),
     onFileChange: vi.fn(() => () => undefined),
   };
 }

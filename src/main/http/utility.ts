@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { checkForAppUpdate } from '../services/infrastructure/AppUpdateChecker';
+
+import type { CodexAppUpdateStatus } from '@main/types';
 import type { FastifyInstance } from 'fastify';
 
 export const readVersionFromPackageJson = (): string => {
@@ -28,15 +31,29 @@ export const readVersionFromPackageJson = (): string => {
   return '0.0.0';
 };
 
-export const registerUtilityRoutes = (
-  app: FastifyInstance,
-  getVersion: (() => string) | undefined,
-): void => {
-  app.get('/version', async () => {
-    if (getVersion) {
-      return getVersion();
+interface UtilityRouteOptions {
+  getVersion?: () => string;
+  getAppUpdateStatus?: () => Promise<CodexAppUpdateStatus>;
+}
+
+export const registerUtilityRoutes = (app: FastifyInstance, options: UtilityRouteOptions = {}): void => {
+  const resolveVersion = (): string => {
+    if (options.getVersion) {
+      return options.getVersion();
     }
 
     return readVersionFromPackageJson();
+  };
+
+  app.get('/version', async () => {
+    return resolveVersion();
+  });
+
+  app.get('/app-update', async () => {
+    if (options.getAppUpdateStatus) {
+      return options.getAppUpdateStatus();
+    }
+
+    return checkForAppUpdate({ currentVersion: resolveVersion() });
   });
 };

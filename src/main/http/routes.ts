@@ -9,6 +9,7 @@ import { registerStatsRoutes } from './stats';
 import { registerUtilityRoutes } from './utility';
 
 import type { CodexServiceContext } from '@main/services/infrastructure';
+import type { CodexAppUpdateStatus } from '@main/types';
 import type { FastifyInstance } from 'fastify';
 
 const logger = createLogger('HTTP:routes');
@@ -16,6 +17,7 @@ const logger = createLogger('HTTP:routes');
 export interface HttpRouteServices {
   serviceContext: CodexServiceContext;
   getVersion?: () => string;
+  getAppUpdateStatus?: () => Promise<CodexAppUpdateStatus>;
 }
 
 export const registerHttpRoutes = (app: FastifyInstance, services: HttpRouteServices): void => {
@@ -24,7 +26,10 @@ export const registerHttpRoutes = (app: FastifyInstance, services: HttpRouteServ
   registerStatsRoutes(app, services.serviceContext);
   registerSearchRoutes(app, services.serviceContext);
   registerConfigRoutes(app, services.serviceContext);
-  registerUtilityRoutes(app, services.getVersion);
+  registerUtilityRoutes(app, {
+    getVersion: services.getVersion,
+    getAppUpdateStatus: services.getAppUpdateStatus,
+  });
   registerEventRoutes(app);
 
   logger.info('All HTTP routes registered');
