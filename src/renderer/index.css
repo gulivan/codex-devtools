@@ -1471,6 +1471,97 @@ select {
   overflow-wrap: anywhere;
 }
 
+.stream-artifact {
+  width: min(900px, 100%);
+  border: 1px solid rgba(14, 165, 233, 0.45);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(2, 132, 199, 0.14), rgba(2, 132, 199, 0.08));
+  overflow: hidden;
+}
+
+.stream-artifact-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.stream-artifact-summary-hint {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.stream-artifact-list {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stream-artifact-event {
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stream-artifact-event:first-child {
+  border-top: 0;
+}
+
+.stream-artifact-event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+
+.stream-artifact-badge {
+  border: 1px solid rgba(14, 165, 233, 0.5);
+  border-radius: 999px;
+  background: rgba(2, 132, 199, 0.2);
+  color: #7dd3fc;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 2px 7px;
+}
+
+.stream-artifact-time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.69rem;
+}
+
+.stream-artifact-meta {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.73rem;
+  overflow-wrap: anywhere;
+}
+
+.stream-artifact-meta code {
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+}
+
+.stream-artifact-payload {
+  margin: 7px 0 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+  color: #cbd5e1;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .chat-session-token-sticky {
   display: flex;
   justify-content: flex-start;

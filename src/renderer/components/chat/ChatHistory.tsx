@@ -10,6 +10,7 @@ import { Layers } from 'lucide-react';
 
 import { AIChatGroup } from './AIChatGroup';
 import { CHAT_LAYOUT_INVALIDATED_EVENT, notifyChatLayoutInvalidated } from './chatLayoutEvents';
+import { StreamArtifactItem, parseStreamArtifactContent } from './items';
 import { UserChatGroup } from './UserChatGroup';
 
 interface ChatHistoryProps {
@@ -264,8 +265,11 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
 
             const systemPreludeKind =
               chunk.type === 'system' ? classifyCodexBootstrapMessage(chunk.content) : null;
+            const streamArtifactEvents =
+              chunk.type === 'system' ? parseStreamArtifactContent(chunk.content) : null;
             const systemPreludeKey =
               chunk.type === 'system' &&
+              !streamArtifactEvents &&
               systemPreludeKind &&
               systemPreludeKind !== 'collaboration_mode'
                 ? buildSystemPreludeKey(chunk.timestamp, virtualRow.index)
@@ -292,7 +296,9 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
                 {chunk.type === 'user' ? <UserChatGroup chunk={chunk} /> : null}
                 {chunk.type === 'ai' ? <AIChatGroup chunk={chunk} /> : null}
                 {chunk.type === 'system' ? (
-                  systemPreludeKind ? (
+                  streamArtifactEvents ? (
+                    <StreamArtifactItem events={streamArtifactEvents} />
+                  ) : systemPreludeKind ? (
                     systemPreludeKind === 'collaboration_mode' ? (
                       <div className="chat-model-change">
                         <span className="chat-model-change-label">
