@@ -39,8 +39,15 @@ describeUnixOnly('cli entrypoint', () => {
     expect(result.stderr).toContain('Bun is required to run this app.');
   });
 
-  it('routes desktop mode to electrobun via bunx', () => {
+  it('routes desktop mode to electrobun via local dependency', () => {
     const commandLog = join(tempDir, 'desktop-command.log');
+    const electrobunEntrypoint = join(
+      process.cwd(),
+      'node_modules',
+      'electrobun',
+      'bin',
+      'electrobun.cjs',
+    );
 
     writeExecutable(
       join(tempDir, 'bun'),
@@ -49,13 +56,6 @@ if [ "$1" = "--version" ]; then
   echo "1.3.8"
   exit 0
 fi
-echo "$@" >> "${commandLog}"
-exit 0
-`,
-    );
-    writeExecutable(
-      join(tempDir, 'bunx'),
-      `#!/bin/sh
 echo "$@" > "${commandLog}"
 exit 0
 `,
@@ -65,7 +65,7 @@ exit 0
 
     expect(result.status).toBe(0);
     const command = readFileSync(commandLog, 'utf8').trim();
-    expect(command).toBe('electrobun dev --console --flag');
+    expect(command).toBe(`${electrobunEntrypoint} dev --console --flag`);
   });
 
   it('routes standalone mode to bun run src/main/standalone.ts', () => {
@@ -82,14 +82,6 @@ echo "$@" > "${commandLog}"
 exit 0
 `,
     );
-    writeExecutable(
-      join(tempDir, 'bunx'),
-      `#!/bin/sh
-echo "$@" > /dev/null
-exit 0
-`,
-    );
-
     const result = runCli(['--web', '--port=4000'], { PATH: tempDir });
 
     expect(result.status).toBe(0);

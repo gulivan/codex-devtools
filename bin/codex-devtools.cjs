@@ -2,6 +2,7 @@
 'use strict';
 
 const { spawn, spawnSync } = require('node:child_process');
+const { existsSync } = require('node:fs');
 const { join } = require('node:path');
 
 const APP_ROOT = join(__dirname, '..');
@@ -54,10 +55,37 @@ function runStandalone() {
   runChild('bun', ['run', 'src/main/standalone.ts', ...forwardedArgs]);
 }
 
+function ensureDesktopRuntimeDeps() {
+  const electrobunPackageJson = join(APP_ROOT, 'node_modules', 'electrobun', 'package.json');
+  if (existsSync(electrobunPackageJson)) {
+    return;
+  }
+
+  console.log(`[${APP_DISPLAY_NAME}] Installing desktop runtime dependencies...`);
+  const result = spawnSync('bun', ['install', '--production'], {
+    cwd: APP_ROOT,
+    stdio: 'inherit',
+    env: process.env,
+  });
+
+  if (result.status !== 0) {
+    console.error(`[${APP_DISPLAY_NAME}] Failed to install desktop runtime dependencies.`);
+    process.exit(result.status ?? 1);
+  }
+}
+
 function runDesktop() {
   ensureBun();
+  ensureDesktopRuntimeDeps();
   const forwardedArgs = process.argv.slice(2).filter((arg) => arg !== '--desktop');
-  runChild('bunx', ['electrobun', 'dev', '--console', ...forwardedArgs]);
+  const electrobunEntrypoint = join(APP_ROOT, 'node_modules', 'electrobun', 'bin', 'electrobun.cjs');
+
+  if (!existsSync(electrobunEntrypoint)) {
+    console.error(`[${APP_DISPLAY_NAME}] Electrobun entrypoint not found: ${electrobunEntrypoint}`);
+    process.exit(1);
+  }
+
+  runChild('bun', [electrobunEntrypoint, 'dev', '--console', ...forwardedArgs]);
 }
 
 if (hasArg('--help') || hasArg('-h')) {
