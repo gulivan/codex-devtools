@@ -65,6 +65,35 @@ exit 0
 
     expect(result.status).toBe(0);
     const command = readFileSync(commandLog, 'utf8').trim();
+    expect(command).toBe(`${electrobunEntrypoint} dev --flag`);
+  });
+
+  it('enables desktop console logs in npm dev lifecycle', () => {
+    const commandLog = join(tempDir, 'desktop-dev-command.log');
+    const electrobunEntrypoint = join(
+      process.cwd(),
+      'node_modules',
+      'electrobun',
+      'bin',
+      'electrobun.cjs',
+    );
+
+    writeExecutable(
+      join(tempDir, 'bun'),
+      `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "1.3.8"
+  exit 0
+fi
+echo "$@" > "${commandLog}"
+exit 0
+`,
+    );
+
+    const result = runCli(['--desktop', '--flag'], { PATH: tempDir, npm_lifecycle_event: 'dev' });
+
+    expect(result.status).toBe(0);
+    const command = readFileSync(commandLog, 'utf8').trim();
     expect(command).toBe(`${electrobunEntrypoint} dev --console --flag`);
   });
 

@@ -85,7 +85,16 @@ function runDesktop() {
     process.exit(1);
   }
 
-  runChild('bun', [electrobunEntrypoint, 'dev', '--console', ...forwardedArgs]);
+  const lifecycleEvent = (process.env.npm_lifecycle_event || '').toLowerCase();
+  const shouldEnableConsole = lifecycleEvent === 'dev' && !forwardedArgs.includes('--console');
+  const desktopArgs = [electrobunEntrypoint, 'dev'];
+
+  if (shouldEnableConsole) {
+    desktopArgs.push('--console');
+  }
+
+  desktopArgs.push(...forwardedArgs);
+  runChild('bun', desktopArgs);
 }
 
 if (hasArg('--help') || hasArg('-h')) {
