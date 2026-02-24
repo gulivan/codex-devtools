@@ -1,6 +1,5 @@
 {
   "name": "codex-devtools",
-  "type": "module",
   "version": "0.1.0",
   "description": "Desktop app for inspecting Codex session data",
   "license": "MIT",
@@ -16,39 +15,47 @@
   "bugs": {
     "url": "https://github.com/gulivan/codex-devtools/issues"
   },
-  "main": "dist-electron/main/index.cjs",
   "bin": {
     "codex-devtools": "bin/codex-devtools.cjs"
   },
   "files": [
     "bin/**",
-    "dist-electron/**",
-    "out/renderer/**",
+    "dist/**",
     "resources/**",
+    "src/bun/**",
+    "src/main/**",
+    "src/shared/**",
+    "electrobun.config.ts",
+    "vite.config.ts",
+    "tsconfig.json",
+    "tsconfig.node.json",
     "README.md"
   ],
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:raw": "electron-vite dev",
-    "build": "electron-vite build",
-    "dist": "electron-builder --mac --win --linux --publish never",
-    "dist:mac": "electron-builder --mac --publish never",
-    "dist:mac:arm64": "electron-builder --mac --arm64 --publish never",
-    "dist:mac:x64": "electron-builder --mac --x64 --publish never",
-    "dist:win": "electron-builder --win --publish never",
-    "dist:linux": "electron-builder --linux --publish never",
+    "dev": "pnpm build:renderer && electrobun dev --console",
+    "dev:hmr": "pnpm build:renderer && concurrently \"vite --port 5173\" \"electrobun dev --console\"",
+    "build:renderer": "vite build",
+    "build:desktop": "electrobun build --env=dev",
+    "build": "pnpm build:renderer && pnpm build:desktop",
+    "dist": "pnpm build:renderer && electrobun build --env=stable",
+    "dist:mac": "pnpm dist",
+    "dist:mac:arm64": "pnpm dist",
+    "dist:mac:x64": "pnpm dist",
+    "dist:win": "pnpm dist",
+    "dist:linux": "pnpm dist",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "standalone": "pnpm build && node dist-electron/main/standalone.cjs",
-    "prepack": "pnpm build"
+    "standalone": "pnpm build:renderer && bun run src/main/standalone.ts",
+    "clean": "rm -rf dist build .electrobun",
+    "prepack": "pnpm build:renderer"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/static": "^9.0.0",
     "@tanstack/react-virtual": "^3.10.8",
     "date-fns": "^3.6.0",
-    "electron": "~40.3.0",
+    "electrobun": "1.14.4",
     "fastify": "^5.7.4",
     "lucide-react": "^0.562.0",
     "react": "^18.3.1",
@@ -57,13 +64,13 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",
+    "@types/bun": "1.3.9",
     "@types/node": "^25.0.7",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.17",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^2.3.0",
+    "concurrently": "9.2.1",
     "eslint": "^9.39.2",
     "postcss": "^8.4.35",
     "prettier": "^3.8.1",
@@ -71,56 +78,6 @@
     "typescript": "^5.9.3",
     "vite": "^5.4.2",
     "vitest": "^3.1.4"
-  },
-  "build": {
-    "appId": "com.codex.devtools",
-    "productName": "codex-devtools",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "out/renderer/**",
-      "dist-electron/**",
-      "package.json"
-    ],
-    "asar": true,
-    "asarUnpack": [
-      "out/renderer/**"
-    ],
-    "npmRebuild": false,
-    "extraMetadata": {
-      "main": "dist-electron/main/index.cjs"
-    },
-    "icon": "resources/icon.png",
-    "mac": {
-      "icon": "resources/icon.icns",
-      "category": "public.app-category.developer-tools",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "dmg": {
-      "sign": false
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm"
-      ],
-      "category": "Development"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    }
   },
   "publishConfig": {
     "access": "public"

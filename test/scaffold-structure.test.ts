@@ -28,9 +28,7 @@ const requiredDirectories = [
 ];
 
 const requiredBarrelFiles = [
-  'src/main/ipc/index.ts',
   'src/main/utils/index.ts',
-  'src/preload/constants/index.ts',
   'src/renderer/index.ts',
   'src/renderer/components/chat/index.ts',
   'src/renderer/components/chat/items/index.ts',

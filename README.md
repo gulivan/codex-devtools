@@ -19,69 +19,55 @@
 
 ## Quick start
 
-> Requires **Node.js 20+** and **pnpm 10** (Corepack recommended).
+Requires:
+- **Bun 1.2+**
+- **Node.js 20+** (for tooling)
+- **pnpm 10**
 
 ```bash
 git clone https://github.com/gulivan/codex-devtools.git
 cd codex-devtools
 corepack enable
 pnpm install
-pnpm approve-builds   # approve electron and esbuild
-pnpm dev              # launch Electron app in dev mode
+pnpm dev
 ```
 
-Or run instantly via npm without cloning:
+This launches the Electrobun desktop app.
+
+Run from npm/bunx:
 
 ```bash
-npx codex-devtools
-# or
 bunx codex-devtools
-```
-
-This launches the native Electron app window.
-
-To run web/HTTP mode explicitly:
-
-```bash
-npx codex-devtools --web
 # or
-bunx codex-devtools --web
-```
-
-Standalone mode serves at `http://localhost:3456`.
-
-To make web mode the default without flags:
-
-```bash
-CODEX_DEVTOOLS_DEFAULT_MODE=web npx codex-devtools
+npx codex-devtools
 ```
 
 ## Standalone mode
 
-Run as an HTTP server without Electron:
+Run as an HTTP server without desktop shell:
 
 ```bash
 pnpm standalone
 ```
 
-Opens at `http://localhost:3456` by default.
-
-## Production build
+Or from the CLI entry:
 
 ```bash
-pnpm build            # compile renderer + main/preload
-pnpm dist             # create installers for all platforms
+codex-devtools --web
 ```
 
-Platform-specific:
+Default standalone host: `http://localhost:3456`.
 
-| Command | Output |
-|---------|--------|
-| `pnpm dist:mac` | `.dmg`, `.zip` |
-| `pnpm dist:win` | NSIS installer |
-| `pnpm dist:linux` | AppImage, `.deb`, `.rpm` |
+## Build
 
-Build artifacts land in `release/`.
+```bash
+pnpm build          # vite renderer + electrobun desktop build
+pnpm dist           # stable electrobun package for current host platform
+```
+
+Notes:
+- Electrobun builds are host-platform only.
+- `dist:mac`, `dist:win`, and `dist:linux` are host aliases to `pnpm dist`.
 
 ## Environment variables
 
@@ -90,60 +76,20 @@ Build artifacts land in `release/`.
 | `CODEX_SESSIONS_PATH` | `~/.codex/sessions` | Path to Codex sessions directory |
 | `HOST` | `0.0.0.0` | Standalone server host |
 | `PORT` | `3456` | Standalone server port |
+| `CODEX_DEVTOOLS_DEFAULT_MODE` | `desktop` | Set to `web` to default CLI to standalone mode |
 
 ## Scripts
 
 | Script | Description |
 |--------|-------------|
-| `pnpm dev` | Electron app in dev mode |
-| `pnpm build` | Build renderer + Electron main/preload |
-| `pnpm standalone` | Build and run standalone HTTP server |
-| `pnpm dist` | Package for macOS + Windows + Linux |
-| `pnpm dist:mac` | Package for macOS |
-| `pnpm dist:win` | Package for Windows |
-| `pnpm dist:linux` | Package for Linux |
+| `pnpm dev` | Build renderer and run Electrobun dev mode |
+| `pnpm dev:hmr` | Run Vite + Electrobun together |
+| `pnpm build` | Build renderer + Electrobun desktop bundle |
+| `pnpm standalone` | Build renderer and run standalone HTTP mode |
+| `pnpm dist` | Stable Electrobun build (host platform) |
 | `pnpm test` | Run tests (Vitest) |
 | `pnpm lint` | Run ESLint |
 | `pnpm typecheck` | TypeScript type checks |
-
-## CI/CD
-
-| Workflow | Trigger | Action |
-|----------|---------|--------|
-| `ci.yml` | Push to `main`, PRs | Typecheck, lint, build, test |
-| `cut-release-tag.yml` | Successful `CI` on `main`, manual dispatch | Compute next semver tag and trigger release publish workflows |
-| `release.yml` | Semver tags (`v*`), manual | Cross-platform packaging |
-| `npm-publish.yml` | Semver tags (`v*`), manual | Publish to npm |
-
-Required secret: `NPM_TOKEN` (npm automation token with publish + 2FA bypass).
-
-## Releasing
-
-Release tags are cut automatically after `CI` succeeds on `main`.
-
-Automatic bump rules (Conventional Commit aware):
-
-- `major`: any commit subject with `!` (for example `feat!: ...`) or body with `BREAKING CHANGE:`
-- `minor`: at least one `feat:`
-- `patch`: `fix:`, `perf:`, `revert:`, or fallback when no release type is detected
-
-Manual override:
-
-```bash
-gh workflow run "Cut Release Tag" --ref main -f bump=major
-```
-
-Tags must be valid semver (`vMAJOR.MINOR.PATCH`). Pre-release metadata supported (`v1.2.3-beta.1`).
-
-## Troubleshooting
-
-**`Electron failed to install correctly`**
-
-```bash
-pnpm approve-builds   # approve electron and esbuild
-pnpm install
-pnpm dev
-```
 
 ## License
 

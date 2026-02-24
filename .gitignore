@@ -1,5 +1,8 @@
 node_modules/
 dist/
+build/
+artifacts/
+.electrobun/
 dist-electron/
 out/
 release/

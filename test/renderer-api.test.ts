@@ -28,6 +28,7 @@ describe('renderer api adapter', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
+    vi.unmock('electrobun/view');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (globalThis as any).window;
   });
@@ -152,5 +153,108 @@ describe('renderer api adapter', () => {
       'http://127.0.0.1:3456/config',
       expect.objectContaining({ method: 'PUT' }),
     );
+  });
+
+  it('uses Electrobun RPC in desktop runtime', async () => {
+    const request = {
+      getProjects: vi.fn(async () => [{ cwd: '/repo', name: 'repo', sessionCount: 1, lastActivity: null }]),
+      getSessions: vi.fn(async () => []),
+      getSessionDetail: vi.fn(async () => null),
+      getSessionChunks: vi.fn(async () => null),
+      getStats: vi.fn(async () => ({
+        generatedAt: '2026-02-18T00:00:00.000Z',
+        timezone: 'UTC',
+        scope: { type: 'all' as const },
+        totals: {
+          sessions: 0,
+          archivedSessions: 0,
+          eventCount: 0,
+          durationMs: 0,
+          estimatedCostUsd: 0,
+          totalTokens: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: 0,
+          reasoningTokens: 0,
+        },
+        daily: [],
+        hourly: [],
+        topDays: [],
+        topHours: [],
+        models: [],
+        reasoningEfforts: [],
+        costCoverage: {
+          pricedTokens: 0,
+          unpricedTokens: 0,
+          unpricedModels: [],
+        },
+        rates: {
+          updatedAt: null,
+          source: null,
+        },
+      })),
+      searchSessions: vi.fn(async () => ({ query: 'x', totalMatches: 0, sessionsSearched: 0, results: [] })),
+      getConfig: vi.fn(async () => createConfig('dark')),
+      updateConfig: vi.fn(async () => createConfig('light')),
+      getAppVersion: vi.fn(async () => '0.1.0'),
+      checkAppUpdate: vi.fn(async () => ({
+        currentVersion: '0.1.0',
+        latestVersion: null,
+        updateAvailable: false,
+        releaseUrl: null,
+        checkedAt: '2026-02-22T00:00:00.000Z',
+        source: 'github' as const,
+        error: null,
+      })),
+    };
+
+    const addMessageListener = vi.fn();
+    const removeMessageListener = vi.fn();
+    const electroviewConstructor = vi.fn();
+    const defineRpc = vi.fn(() => ({
+      request,
+      addMessageListener,
+      removeMessageListener,
+    }));
+
+    vi.doMock(
+      'electrobun/view',
+      () => ({
+        Electroview: class {
+          static defineRPC = defineRpc;
+          constructor(config: unknown) {
+            electroviewConstructor(config);
+          }
+        },
+      }),
+    );
+
+    const fetchMock = vi.fn();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).window = {
+      location: { origin: 'http://127.0.0.1:3456', search: '' },
+      __electrobunWebviewId: 1,
+      __electrobunRpcSocketPort: 14000,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).fetch = fetchMock;
+
+    const { api, isElectronMode } = await import('@renderer/api');
+
+    expect(isElectronMode()).toBe(true);
+    const projects = await api.getProjects();
+    expect(projects).toHaveLength(1);
+    expect(request.getProjects).toHaveBeenCalledWith({});
+    expect(defineRpc).toHaveBeenCalledTimes(1);
+    expect(electroviewConstructor).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const off = api.onFileChange(() => undefined);
+    await vi.waitFor(() => {
+      expect(addMessageListener).toHaveBeenCalledTimes(1);
+    });
+    expect(addMessageListener).toHaveBeenCalledWith('fileChange', expect.any(Function));
+    off();
+    expect(removeMessageListener).toHaveBeenCalledWith('fileChange', expect.any(Function));
   });
 });

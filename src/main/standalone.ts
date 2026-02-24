@@ -1,6 +1,7 @@
 import fastifyCors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
+import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,6 +29,17 @@ export interface StandaloneServerOptions {
   configPath?: string;
 }
 
+const resolveRendererOutputPath = (): string => {
+  const candidates = [
+    join(__dirname, '../../dist'),
+    join(__dirname, '../../out/renderer'),
+    join(process.cwd(), 'dist'),
+    join(process.cwd(), 'out/renderer'),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+};
+
 export const createStandaloneServer = async (
   options: StandaloneServerOptions = {},
 ): Promise<StandaloneServer> => {
@@ -50,7 +62,7 @@ export const createStandaloneServer = async (
 
   await app.register(fastifyCors, { origin: true });
   await app.register(fastifyStatic, {
-    root: join(__dirname, '../../out/renderer'),
+    root: resolveRendererOutputPath(),
     prefix: '/',
   });
 

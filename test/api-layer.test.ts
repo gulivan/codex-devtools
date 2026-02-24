@@ -4,10 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { registerHttpRoutes } from '../src/main/http';
-import { initializeIpcHandlers, removeIpcHandlers } from '../src/main/ipc/handlers';
 import { createStandaloneServer } from '../src/main/standalone';
 import { CodexServiceContext, type CodexDevToolsConfig } from '../src/main/services/infrastructure';
-import { IPC_CHANNELS } from '../src/preload/constants/channels';
 
 interface SessionFixtureInput {
   id: string;
@@ -15,31 +13,6 @@ interface SessionFixtureInput {
   userMessage: string;
   assistantMessage: string;
   filePath: string;
-}
-
-class IpcMainMock {
-  private readonly handlers = new Map<string, (...args: unknown[]) => unknown>();
-
-  handle(channel: string, handler: (...args: unknown[]) => unknown): void {
-    this.handlers.set(channel, handler);
-  }
-
-  removeHandler(channel: string): void {
-    this.handlers.delete(channel);
-  }
-
-  async invoke(channel: string, ...args: unknown[]): Promise<unknown> {
-    const handler = this.handlers.get(channel);
-    if (!handler) {
-      throw new Error(`Handler not found for channel: ${channel}`);
-    }
-
-    return handler({} as never, ...args);
-  }
-
-  size(): number {
-    return this.handlers.size;
-  }
 }
 
 function writeSessionFixture(input: SessionFixtureInput): void {
@@ -461,61 +434,6 @@ describe('api layer', () => {
     expect(JSON.parse(appUpdateResponse.body)?.latestVersion).toBe('10.0.0');
 
     await app.close();
-  });
-
-  it('registers and removes IPC handlers', async () => {
-    const ipcMainMock = new IpcMainMock();
-
-    initializeIpcHandlers(serviceContext, ipcMainMock as never, {
-      getVersion: () => '1.2.3',
-      getAppUpdateStatus: async () => ({
-        currentVersion: '1.2.3',
-        latestVersion: '1.3.0',
-        updateAvailable: true,
-        releaseUrl: 'https://github.com/gulivan/codex-devtools/releases/tag/v1.3.0',
-        checkedAt: '2026-02-22T00:00:00.000Z',
-        source: 'github',
-        error: null,
-      }),
-    });
-
-    const projects = (await ipcMainMock.invoke(IPC_CHANNELS.SESSIONS_GET_PROJECTS)) as unknown[];
-    expect(projects).toHaveLength(2);
-
-    const sessions = (await ipcMainMock.invoke(
-      IPC_CHANNELS.SESSIONS_GET_SESSIONS,
-      '/workspace/app-a',
-    )) as unknown[];
-    expect(sessions).toHaveLength(2);
-
-    const detail = (await ipcMainMock.invoke(
-      IPC_CHANNELS.SESSIONS_GET_DETAIL,
-      'session-1',
-    )) as { session?: { id?: string } } | null;
-    expect(detail?.session?.id).toBe('session-1');
-
-    const search = (await ipcMainMock.invoke(IPC_CHANNELS.SEARCH_SESSIONS, 'login')) as {
-      totalMatches: number;
-    };
-    expect(search.totalMatches).toBeGreaterThan(0);
-
-    const stats = (await ipcMainMock.invoke(IPC_CHANNELS.SESSIONS_GET_STATS, { type: 'all' })) as {
-      totals: { sessions: number };
-    };
-    expect(stats.totals.sessions).toBeGreaterThan(0);
-
-    const version = await ipcMainMock.invoke(IPC_CHANNELS.UTILITY_GET_APP_VERSION);
-    expect(version).toBe('1.2.3');
-
-    const appUpdate = (await ipcMainMock.invoke(IPC_CHANNELS.UTILITY_CHECK_APP_UPDATE)) as {
-      updateAvailable?: boolean;
-      latestVersion?: string;
-    };
-    expect(appUpdate.updateAvailable).toBe(true);
-    expect(appUpdate.latestVersion).toBe('1.3.0');
-
-    removeIpcHandlers(ipcMainMock as never);
-    expect(ipcMainMock.size()).toBe(0);
   });
 
   it('creates standalone server and serves /version', async () => {

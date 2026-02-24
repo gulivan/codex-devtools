@@ -46,6 +46,8 @@ const DEFAULT_CONFIG: CodexDevToolsConfig = {
   },
 };
 
+export const createDefaultCodexDevToolsConfig = (): CodexDevToolsConfig => structuredClone(DEFAULT_CONFIG);
+
 function deepMerge<T>(target: T, source: Partial<T>): T {
   const output = { ...target } as Record<string, unknown>;
 
@@ -105,14 +107,14 @@ export class ConfigManager {
   }
 
   resetConfig(): CodexDevToolsConfig {
-    this.config = structuredClone(DEFAULT_CONFIG);
+    this.config = createDefaultCodexDevToolsConfig();
     this.saveConfig();
     return this.getConfig();
   }
 
   private loadConfig(): CodexDevToolsConfig {
     if (!fs.existsSync(this.configPath)) {
-      const initial = structuredClone(DEFAULT_CONFIG);
+      const initial = createDefaultCodexDevToolsConfig();
       this.writeConfig(initial);
       return initial;
     }
@@ -120,9 +122,9 @@ export class ConfigManager {
     try {
       const raw = fs.readFileSync(this.configPath, 'utf8');
       const parsed = JSON.parse(raw) as Partial<CodexDevToolsConfig>;
-      return deepMerge(structuredClone(DEFAULT_CONFIG), parsed);
+      return deepMerge(createDefaultCodexDevToolsConfig(), parsed);
     } catch {
-      const fallback = structuredClone(DEFAULT_CONFIG);
+      const fallback = createDefaultCodexDevToolsConfig();
       this.writeConfig(fallback);
       return fallback;
     }

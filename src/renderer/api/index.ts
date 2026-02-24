@@ -9,6 +9,7 @@ import type {
   CodexStatsScope,
   CodexStatsSummary,
 } from '@main/types';
+import type { CodexDevtoolsRpc } from '@shared/rpc';
 
 export interface RendererApi {
   getProjects: () => Promise<CodexProject[]>;
@@ -34,6 +35,25 @@ interface HttpApiOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   eventSourceFactory?: (url: string) => EventSourceLike;
+}
+
+type ElectroviewRequests = CodexDevtoolsRpc['bun']['requests'];
+type ElectroviewMessages = CodexDevtoolsRpc['webview']['messages'];
+
+interface ElectroviewRpc {
+  request: {
+    [K in keyof ElectroviewRequests]: (
+      params: ElectroviewRequests[K]['params'],
+    ) => Promise<ElectroviewRequests[K]['response']>;
+  };
+  addMessageListener: (
+    message: keyof ElectroviewMessages | '*',
+    listener: (...args: unknown[]) => void,
+  ) => void;
+  removeMessageListener: (
+    message: keyof ElectroviewMessages | '*',
+    listener: (...args: unknown[]) => void,
+  ) => void;
 }
 
 function getHttpBaseUrl(): string {
@@ -93,9 +113,7 @@ class HttpApiClient implements RendererApi {
 
   async getStats(scope: CodexStatsScope = { type: 'all' }): Promise<CodexStatsSummary> {
     if (scope.type === 'project') {
-      return this.get<CodexStatsSummary>(
-        `/stats?scope=project&cwd=${encodeURIComponent(scope.cwd)}`,
-      );
+      return this.get<CodexStatsSummary>(`/stats?scope=project&cwd=${encodeURIComponent(scope.cwd)}`);
     }
 
     return this.get<CodexStatsSummary>('/stats?scope=all');
@@ -201,41 +219,137 @@ function getWindowApi(): RendererApi | null {
   return null;
 }
 
-let cachedHttpApi: RendererApi | null = null;
+const isElectrobunRuntime = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
 
-function resolveApi(): RendererApi {
+  return (
+    typeof window.__electrobunWebviewId === 'number' &&
+    typeof window.__electrobunRpcSocketPort === 'number'
+  );
+};
+
+let cachedHttpApi: RendererApi | null = null;
+let cachedElectrobunApiPromise: Promise<RendererApi | null> | null = null;
+let cachedResolvedApiPromise: Promise<RendererApi> | null = null;
+
+const createElectrobunApiClient = async (): Promise<RendererApi | null> => {
+  if (!isElectrobunRuntime()) {
+    return null;
+  }
+
+  try {
+    const { Electroview } = await import('electrobun/view');
+    const rpc = Electroview.defineRPC<CodexDevtoolsRpc>({
+      handlers: {},
+    }) as ElectroviewRpc;
+    new Electroview({ rpc: rpc as never });
+
+    return {
+      getProjects: () => rpc.request.getProjects({}),
+      getSessions: (projectCwd: string) => rpc.request.getSessions({ projectCwd }),
+      getSessionDetail: (sessionId: string) => rpc.request.getSessionDetail({ sessionId }),
+      getSessionChunks: (sessionId: string) => rpc.request.getSessionChunks({ sessionId }),
+      getStats: (scope?: CodexStatsScope) => rpc.request.getStats({ scope }),
+      searchSessions: (query: string) => rpc.request.searchSessions({ query }),
+      getConfig: () => rpc.request.getConfig({}),
+      updateConfig: (key, value) => rpc.request.updateConfig({ key, value }),
+      getAppVersion: () => rpc.request.getAppVersion({}),
+      checkAppUpdate: () => rpc.request.checkAppUpdate({}),
+      onFileChange: (callback) => {
+        const listener = (payload: unknown): void => {
+          callback(payload as CodexFileChangeEvent);
+        };
+
+        rpc.addMessageListener('fileChange', listener);
+        return (): void => {
+          rpc.removeMessageListener('fileChange', listener);
+        };
+      },
+    };
+  } catch {
+    return null;
+  }
+};
+
+const resolveApi = async (): Promise<RendererApi> => {
   const windowApi = getWindowApi();
   if (windowApi) {
     return windowApi;
   }
 
-  if (!cachedHttpApi) {
-    cachedHttpApi = createHttpApiClient({
-      baseUrl: getHttpBaseUrl(),
-    });
+  if (cachedResolvedApiPromise) {
+    return cachedResolvedApiPromise;
   }
 
-  return cachedHttpApi;
-}
-
-export const isElectronMode = (): boolean => getWindowApi() !== null;
-
-export const api: RendererApi = new Proxy({} as RendererApi, {
-  get(_target, prop, receiver): unknown {
-    const impl = resolveApi();
-    const value = Reflect.get(impl as object, prop, receiver);
-
-    if (typeof value === 'function') {
-      return (value as (...args: unknown[]) => unknown).bind(impl);
+  cachedResolvedApiPromise = (async () => {
+    if (!cachedElectrobunApiPromise) {
+      cachedElectrobunApiPromise = createElectrobunApiClient();
     }
 
-    return value;
+    const electrobunApi = await cachedElectrobunApiPromise;
+    if (electrobunApi) {
+      return electrobunApi;
+    }
+
+    if (!cachedHttpApi) {
+      cachedHttpApi = createHttpApiClient({
+        baseUrl: getHttpBaseUrl(),
+      });
+    }
+
+    return cachedHttpApi;
+  })();
+
+  return cachedResolvedApiPromise;
+};
+
+const invoke = async <T>(call: (impl: RendererApi) => Promise<T>): Promise<T> => {
+  const impl = await resolveApi();
+  return call(impl);
+};
+
+export const isElectronMode = (): boolean => getWindowApi() !== null || isElectrobunRuntime();
+
+export const api: RendererApi = {
+  getProjects: () => invoke((impl) => impl.getProjects()),
+  getSessions: (projectCwd: string) => invoke((impl) => impl.getSessions(projectCwd)),
+  getSessionDetail: (sessionId: string) => invoke((impl) => impl.getSessionDetail(sessionId)),
+  getSessionChunks: (sessionId: string) => invoke((impl) => impl.getSessionChunks(sessionId)),
+  getStats: (scope?: CodexStatsScope) => invoke((impl) => impl.getStats(scope)),
+  searchSessions: (query: string) => invoke((impl) => impl.searchSessions(query)),
+  getConfig: () => invoke((impl) => impl.getConfig()),
+  updateConfig: (key: keyof CodexDevToolsConfig, value: unknown) =>
+    invoke((impl) => impl.updateConfig(key, value)),
+  getAppVersion: () => invoke((impl) => impl.getAppVersion()),
+  checkAppUpdate: () => invoke((impl) => impl.checkAppUpdate()),
+  onFileChange: (callback: (event: CodexFileChangeEvent) => void) => {
+    let removeListener: (() => void) | null = null;
+    let cancelled = false;
+
+    void resolveApi().then((impl) => {
+      if (cancelled) {
+        return;
+      }
+
+      removeListener = impl.onFileChange(callback);
+    });
+
+    return (): void => {
+      cancelled = true;
+      if (removeListener) {
+        removeListener();
+      }
+    };
   },
-});
+};
 
 declare global {
   interface Window {
     codexDevtools?: RendererApi;
     api?: RendererApi;
+    __electrobunWebviewId?: number;
+    __electrobunRpcSocketPort?: number;
   }
 }

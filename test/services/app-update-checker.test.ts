@@ -13,7 +13,7 @@ describe('app update checker', () => {
           headers: { 'Content-Type': 'application/json' },
         },
       ),
-    );
+    ) as unknown as typeof fetch;
 
     const status = await checkForAppUpdate({
       currentVersion: '1.2.0',
@@ -27,7 +27,7 @@ describe('app update checker', () => {
   });
 
   it('handles failed release fetch without throwing', async () => {
-    const fetchImpl = vi.fn(async () => new Response('', { status: 503 }));
+    const fetchImpl = vi.fn(async () => new Response('', { status: 503 })) as unknown as typeof fetch;
 
     const status = await checkForAppUpdate({
       currentVersion: '1.2.0',
