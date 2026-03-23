@@ -17,6 +17,8 @@
 
 ---
 
+<img width="1546" height="1102" alt="SCR-20260323-sbbb-2" src="https://github.com/user-attachments/assets/508b0ecf-0879-4207-8524-0f2950124ee2" />
+
 ## Quick start
 
 Requires:
