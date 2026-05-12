@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useAppStore } from '@renderer/store';
 import {
@@ -6,7 +6,7 @@ import {
   type CodexBootstrapMessageKind,
 } from '@shared/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Layers } from 'lucide-react';
+import { ArrowDown, Layers } from 'lucide-react';
 
 import { AIChatGroup } from './AIChatGroup';
 import { CHAT_LAYOUT_INVALIDATED_EVENT, notifyChatLayoutInvalidated } from './chatLayoutEvents';
@@ -21,6 +21,50 @@ interface SessionTokenStats {
   totalTokens: number;
   inputTokens: number;
   outputTokens: number;
+}
+
+const BOTTOM_FOLLOW_THRESHOLD_PX = 48;
+const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+interface ChatScrollDispositionInput {
+  previousChunkCount: number;
+  nextChunkCount: number;
+  wasBottomPinned: boolean;
+  isSameSession: boolean;
+}
+
+interface ChatScrollDisposition {
+  shouldScrollToBottom: boolean;
+  shouldShowNewMessagesIndicator: boolean;
+}
+
+export function isChatScrolledNearBottom(container: HTMLElement): boolean {
+  return (
+    container.scrollHeight - container.scrollTop - container.clientHeight <=
+    BOTTOM_FOLLOW_THRESHOLD_PX
+  );
+}
+
+export function getChatScrollDisposition({
+  previousChunkCount,
+  nextChunkCount,
+  wasBottomPinned,
+  isSameSession,
+}: ChatScrollDispositionInput): ChatScrollDisposition {
+  const appendedToExistingSession =
+    isSameSession && previousChunkCount > 0 && nextChunkCount > previousChunkCount;
+
+  if (!appendedToExistingSession) {
+    return {
+      shouldScrollToBottom: false,
+      shouldShowNewMessagesIndicator: false,
+    };
+  }
+
+  return {
+    shouldScrollToBottom: wasBottomPinned,
+    shouldShowNewMessagesIndicator: !wasBottomPinned,
+  };
 }
 
 function extractCollaborationModeLabel(content: string): string {
@@ -77,6 +121,12 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
   }));
 
   const parentRef = useRef<HTMLDivElement>(null);
+  const shouldFollowBottomRef = useRef(false);
+  const previousScrollStateRef = useRef<{
+    sessionId?: string;
+    chunkCount: number;
+  } | null>(null);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   const rowVirtualizer = useVirtualizer({
     count: chunks.length,
@@ -89,6 +139,8 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
   );
 
   const virtualRows = rowVirtualizer.getVirtualItems();
+  const hasChunks = chunks.length > 0;
+  const isLoading = chunksLoading && chunksSessionId === sessionId;
 
   const remeasureVisibleRows = useCallback((): void => {
     rowVirtualizer.measure();
@@ -127,18 +179,63 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
     setExpandedPreludeKeys(new Set<string>());
   }, [sessionId]);
 
-  useEffect(() => {
+  useClientLayoutEffect(() => {
     const container = parentRef.current;
     if (!container) {
       return;
     }
 
+    const previousScrollState = previousScrollStateRef.current;
+    if (!previousScrollState || previousScrollState.sessionId !== sessionId) {
+      setHasNewMessages(false);
+      container.scrollTop = 0;
+      shouldFollowBottomRef.current = isChatScrolledNearBottom(container);
+      if (!isLoading) {
+        previousScrollStateRef.current = {
+          sessionId,
+          chunkCount: chunks.length,
+        };
+      }
+      return;
+    }
+
+    if (isLoading) {
+      return;
+    }
+
+    const disposition = getChatScrollDisposition({
+      previousChunkCount: previousScrollState.chunkCount,
+      nextChunkCount: chunks.length,
+      wasBottomPinned: shouldFollowBottomRef.current,
+      isSameSession: true,
+    });
+
+    previousScrollStateRef.current = {
+      sessionId,
+      chunkCount: chunks.length,
+    };
+
+    if (disposition.shouldShowNewMessagesIndicator) {
+      setHasNewMessages(true);
+      return;
+    }
+
+    if (!disposition.shouldScrollToBottom) {
+      shouldFollowBottomRef.current = isChatScrolledNearBottom(container);
+      if (shouldFollowBottomRef.current) {
+        setHasNewMessages(false);
+      }
+      return;
+    }
+
     const raf = requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
+      shouldFollowBottomRef.current = true;
+      setHasNewMessages(false);
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [chunks.length, sessionId]);
+  }, [chunks.length, isLoading, sessionId]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -168,8 +265,6 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
     return () => cancelAnimationFrame(raf);
   }, [chunks, expandedPreludeKeys, remeasureVisibleRows]);
 
-  const hasChunks = chunks.length > 0;
-  const isLoading = chunksLoading && chunksSessionId === sessionId;
   const sessionTokenStats = useMemo(() => {
     return chunks.reduce<SessionTokenStats>((totals, chunk) => {
       if (chunk.type !== 'ai') {
@@ -202,6 +297,30 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
 
     return { model: session.model, reasoningEffort: 'unknown' };
   }, [sessionId, sessions]);
+
+  const handleChatScroll = useCallback((): void => {
+    const container = parentRef.current;
+    if (!container) {
+      return;
+    }
+
+    const isNearBottom = isChatScrolledNearBottom(container);
+    shouldFollowBottomRef.current = isNearBottom;
+    if (isNearBottom) {
+      setHasNewMessages(false);
+    }
+  }, []);
+
+  const handleJumpToLatest = useCallback((): void => {
+    const container = parentRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+    shouldFollowBottomRef.current = true;
+    setHasNewMessages(false);
+  }, []);
 
   const content = useMemo(() => {
     if (isLoading && !hasChunks) {
@@ -383,8 +502,20 @@ export const ChatHistory = ({ sessionId }: ChatHistoryProps): JSX.Element => {
   ]);
 
   return (
-    <div className="chat-shell" ref={parentRef}>
-      {content}
+    <div className="chat-history-frame">
+      <div className="chat-shell" ref={parentRef} onScroll={handleChatScroll}>
+        {content}
+      </div>
+      {hasNewMessages ? (
+        <button
+          type="button"
+          className="chat-new-messages-button"
+          onClick={handleJumpToLatest}
+        >
+          <ArrowDown size={14} aria-hidden="true" />
+          New messages
+        </button>
+      ) : null}
     </div>
   );
 };

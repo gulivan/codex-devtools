@@ -1012,10 +1012,45 @@ select {
   }
 }
 
+.chat-history-frame {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+
 .chat-shell {
   height: 100%;
   overflow: auto;
   padding: 18px;
+}
+
+.chat-new-messages-button {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(59, 130, 246, 0.42);
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.94);
+  color: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.28);
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 4;
+}
+
+.chat-new-messages-button:hover {
+  background: rgba(29, 78, 216, 0.98);
+}
+
+.chat-new-messages-button:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.9);
+  outline-offset: 2px;
 }
 
 .chat-row {

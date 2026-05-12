@@ -29,7 +29,11 @@ vi.mock('@tanstack/react-virtual', () => ({
   }),
 }));
 
-import { ChatHistory } from '@renderer/components/chat/ChatHistory';
+import {
+  ChatHistory,
+  getChatScrollDisposition,
+  isChatScrolledNearBottom,
+} from '@renderer/components/chat/ChatHistory';
 import { parseStreamArtifactContent } from '@renderer/components/chat/items/StreamArtifactItem';
 
 describe('ChatHistory system prelude rendering', () => {
@@ -91,5 +95,79 @@ describe('stream artifact parsing', () => {
   it('returns null when content is not stream artifact jsonl', () => {
     expect(parseStreamArtifactContent('not-json')).toBeNull();
     expect(parseStreamArtifactContent('{"foo":"bar"}')).toBeNull();
+  });
+});
+
+describe('chat scroll behavior', () => {
+  function createScrollContainer(values: {
+    scrollHeight: number;
+    scrollTop: number;
+    clientHeight: number;
+  }): HTMLElement {
+    return values as HTMLElement;
+  }
+
+  it('only treats the chat as bottom-pinned when it is within the follow threshold', () => {
+    expect(
+      isChatScrolledNearBottom(
+        createScrollContainer({
+          scrollHeight: 1_000,
+          scrollTop: 452,
+          clientHeight: 500,
+        }),
+      ),
+    ).toBe(true);
+
+    expect(
+      isChatScrolledNearBottom(
+        createScrollContainer({
+          scrollHeight: 1_000,
+          scrollTop: 300,
+          clientHeight: 500,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not treat initial session load as a new-message append', () => {
+    expect(
+      getChatScrollDisposition({
+        previousChunkCount: 0,
+        nextChunkCount: 15,
+        wasBottomPinned: false,
+        isSameSession: true,
+      }),
+    ).toEqual({
+      shouldScrollToBottom: false,
+      shouldShowNewMessagesIndicator: false,
+    });
+  });
+
+  it('follows appended messages only while bottom-pinned', () => {
+    expect(
+      getChatScrollDisposition({
+        previousChunkCount: 2,
+        nextChunkCount: 3,
+        wasBottomPinned: true,
+        isSameSession: true,
+      }),
+    ).toEqual({
+      shouldScrollToBottom: true,
+      shouldShowNewMessagesIndicator: false,
+    });
+  });
+
+  it('shows the new-message indicator when messages append while scrolled up', () => {
+    expect(
+      getChatScrollDisposition({
+        previousChunkCount: 2,
+        nextChunkCount: 3,
+        wasBottomPinned: false,
+        isSameSession: true,
+      }),
+    ).toEqual({
+      shouldScrollToBottom: false,
+      shouldShowNewMessagesIndicator: true,
+    });
   });
 });
