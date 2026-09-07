@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '@renderer/store';
 
 import { DashboardView } from '../dashboard/DashboardView';
+import { InspectorView } from '../inspector/InspectorView';
 import { StatsView } from '../stats/StatsView';
 import { SettingsView } from '../settings/SettingsView';
 
@@ -13,6 +14,7 @@ import { TabBar } from './TabBar';
 const DASHBOARD_TAB_ID = 'dashboard';
 const SETTINGS_TAB_ID = 'settings';
 const STATS_TAB_ID = 'stats';
+const INSPECTOR_TAB_ID = 'inspector';
 
 export const TabbedLayout = (): JSX.Element => {
   const { openTabs, activeTabId, sidebarCollapsed } = useAppStore((state) => ({
@@ -28,7 +30,10 @@ export const TabbedLayout = (): JSX.Element => {
 
   const settingsActive = activeTabId === SETTINGS_TAB_ID;
   const statsActive = activeTabId === STATS_TAB_ID;
-  const dashboardActive = activeTabId === DASHBOARD_TAB_ID || (!settingsActive && !statsActive && !activeSessionTab);
+  const inspectorActive = activeTabId === INSPECTOR_TAB_ID;
+  const dashboardActive =
+    activeTabId === DASHBOARD_TAB_ID
+    || (!settingsActive && !statsActive && !inspectorActive && !activeSessionTab);
 
   return (
     <div className="layout-shell">
@@ -40,6 +45,7 @@ export const TabbedLayout = (): JSX.Element => {
         <div className="content-body">
           {activeSessionTab ? <SessionTabContent tab={activeSessionTab} /> : null}
           {statsActive ? <StatsView /> : null}
+          {inspectorActive ? <InspectorView /> : null}
           {dashboardActive ? <DashboardView /> : null}
           {settingsActive ? <SettingsView /> : null}
         </div>

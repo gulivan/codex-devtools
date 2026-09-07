@@ -1,5 +1,6 @@
 export * from './config';
 export * from './events';
+export * from './inspector';
 export * from './projects';
 export * from './routes';
 export * from './search';

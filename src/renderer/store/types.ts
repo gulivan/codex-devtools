@@ -7,7 +7,7 @@ import type { StatsSlice } from './slices/statsSlice';
 import type { TabSlice } from './slices/tabSlice';
 import type { UISlice } from './slices/uiSlice';
 
-export type AppTabType = 'dashboard' | 'session' | 'settings' | 'stats';
+export type AppTabType = 'dashboard' | 'session' | 'settings' | 'stats' | 'inspector';
 
 export interface AppTab {
   id: string;

@@ -2,6 +2,7 @@ import { createLogger } from '@shared/utils/logger';
 
 import { registerConfigRoutes } from './config';
 import { registerEventRoutes } from './events';
+import { registerInspectorRoutes } from './inspector';
 import { registerProjectRoutes } from './projects';
 import { registerSearchRoutes } from './search';
 import { registerSessionRoutes } from './sessions';
@@ -22,6 +23,7 @@ export interface HttpRouteServices {
 
 export const registerHttpRoutes = (app: FastifyInstance, services: HttpRouteServices): void => {
   registerProjectRoutes(app, services.serviceContext);
+  registerInspectorRoutes(app, services.serviceContext);
   registerSessionRoutes(app, services.serviceContext);
   registerStatsRoutes(app, services.serviceContext);
   registerSearchRoutes(app, services.serviceContext);

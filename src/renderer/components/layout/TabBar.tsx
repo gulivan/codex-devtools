@@ -5,6 +5,7 @@ import { useAppStore } from '@renderer/store';
 const DASHBOARD_TAB_ID = 'dashboard';
 const STATS_TAB_ID = 'stats';
 const SETTINGS_TAB_ID = 'settings';
+const INSPECTOR_TAB_ID = 'inspector';
 
 export const TabBar = (): JSX.Element => {
   const {
@@ -15,6 +16,7 @@ export const TabBar = (): JSX.Element => {
     openDashboardTab,
     openStatsTab,
     openSettingsTab,
+    openInspectorTab,
     toggleSidebarCollapsed,
     sidebarCollapsed,
   } = useAppStore((state) => ({
@@ -25,6 +27,7 @@ export const TabBar = (): JSX.Element => {
     openDashboardTab: state.openDashboardTab,
     openStatsTab: state.openStatsTab,
     openSettingsTab: state.openSettingsTab,
+    openInspectorTab: state.openInspectorTab,
     toggleSidebarCollapsed: state.toggleSidebarCollapsed,
     sidebarCollapsed: state.sidebarCollapsed,
   }));
@@ -72,6 +75,15 @@ export const TabBar = (): JSX.Element => {
             aria-selected={activeTabId === SETTINGS_TAB_ID}
           >
             Settings
+          </button>
+          <button
+            className={`tabbar-action ${activeTabId === INSPECTOR_TAB_ID ? 'active' : ''}`}
+            onClick={openInspectorTab}
+            type="button"
+            role="tab"
+            aria-selected={activeTabId === INSPECTOR_TAB_ID}
+          >
+            Inspector
           </button>
         </div>
       </div>

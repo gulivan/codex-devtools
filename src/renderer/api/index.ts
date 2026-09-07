@@ -1,6 +1,14 @@
 import type { CodexDevToolsConfig, CodexFileChangeEvent } from '@main/services/infrastructure';
 import type { CodexParsedSession } from '@main/services/parsing';
 import type {
+  InstallationResult,
+  InspectorSession,
+  StatsQuery,
+  StatsResult,
+  TraceQuery,
+  TraceResult,
+} from '@shared/inspector';
+import type {
   CodexAppUpdateStatus,
   CodexChunk,
   CodexProject,
@@ -18,6 +26,10 @@ export interface RendererApi {
   getSessionChunks: (sessionId: string) => Promise<CodexChunk[] | null>;
   getStats: (scope?: CodexStatsScope) => Promise<CodexStatsSummary>;
   searchSessions: (query: string) => Promise<CodexSearchSessionsResult>;
+  getInspectorSessions: () => Promise<InspectorSession[]>;
+  getInspectorTrace: (query: TraceQuery) => Promise<TraceResult | null>;
+  getInspectorStats: (query: StatsQuery) => Promise<StatsResult | null>;
+  getInspectorInstallation: (query?: { cwd?: string }) => Promise<InstallationResult | null>;
   getConfig: () => Promise<CodexDevToolsConfig>;
   updateConfig: (key: keyof CodexDevToolsConfig, value: unknown) => Promise<CodexDevToolsConfig | null>;
   getAppVersion: () => Promise<string>;
@@ -83,6 +95,18 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+function buildInspectorQuery(query: object): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+    params.set(key, String(value));
+  }
+
+  return params.toString();
+}
+
 class HttpApiClient implements RendererApi {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
@@ -121,6 +145,22 @@ class HttpApiClient implements RendererApi {
 
   async searchSessions(query: string): Promise<CodexSearchSessionsResult> {
     return this.get<CodexSearchSessionsResult>(`/search?q=${encodeURIComponent(query)}`);
+  }
+
+  async getInspectorSessions(): Promise<InspectorSession[]> {
+    return this.get<InspectorSession[]>('/inspector/sessions');
+  }
+
+  async getInspectorTrace(query: TraceQuery): Promise<TraceResult | null> {
+    return this.getOrNothing<TraceResult>(`/inspector/trace?${buildInspectorQuery(query)}`);
+  }
+
+  async getInspectorStats(query: StatsQuery): Promise<StatsResult | null> {
+    return this.getOrNothing<StatsResult>(`/inspector/stats?${buildInspectorQuery(query)}`);
+  }
+
+  async getInspectorInstallation(query: { cwd?: string } = {}): Promise<InstallationResult | null> {
+    return this.getOrNothing<InstallationResult>(`/inspector/installation?${buildInspectorQuery(query)}`);
   }
 
   async getConfig(): Promise<CodexDevToolsConfig> {
@@ -184,6 +224,14 @@ class HttpApiClient implements RendererApi {
   private async get<T>(path: string): Promise<T> {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`);
     return parseJsonResponse<T>(response);
+  }
+
+  private async getOrNothing<T>(path: string): Promise<T | null> {
+    try {
+      return await this.get<T>(path);
+    } catch {
+      return null;
+    }
   }
 
   private async put<T>(path: string, body: unknown): Promise<T> {
@@ -253,6 +301,10 @@ const createElectrobunApiClient = async (): Promise<RendererApi | null> => {
       getSessionChunks: (sessionId: string) => rpc.request.getSessionChunks({ sessionId }),
       getStats: (scope?: CodexStatsScope) => rpc.request.getStats({ scope }),
       searchSessions: (query: string) => rpc.request.searchSessions({ query }),
+      getInspectorSessions: () => rpc.request.getInspectorSessions({}),
+      getInspectorTrace: (query) => rpc.request.getInspectorTrace({ query }),
+      getInspectorStats: (query) => rpc.request.getInspectorStats({ query }),
+      getInspectorInstallation: (query = {}) => rpc.request.getInspectorInstallation({ cwd: query.cwd }),
       getConfig: () => rpc.request.getConfig({}),
       updateConfig: (key, value) => rpc.request.updateConfig({ key, value }),
       getAppVersion: () => rpc.request.getAppVersion({}),
@@ -319,6 +371,10 @@ export const api: RendererApi = {
   getSessionChunks: (sessionId: string) => invoke((impl) => impl.getSessionChunks(sessionId)),
   getStats: (scope?: CodexStatsScope) => invoke((impl) => impl.getStats(scope)),
   searchSessions: (query: string) => invoke((impl) => impl.searchSessions(query)),
+  getInspectorSessions: () => invoke((impl) => impl.getInspectorSessions()),
+  getInspectorTrace: (query) => invoke((impl) => impl.getInspectorTrace(query)),
+  getInspectorStats: (query) => invoke((impl) => impl.getInspectorStats(query)),
+  getInspectorInstallation: (query) => invoke((impl) => impl.getInspectorInstallation(query)),
   getConfig: () => invoke((impl) => impl.getConfig()),
   updateConfig: (key: keyof CodexDevToolsConfig, value: unknown) =>
     invoke((impl) => impl.updateConfig(key, value)),

@@ -1,6 +1,7 @@
 import Electrobun, { BrowserView, BrowserWindow } from 'electrobun/bun';
 
 import { readVersionFromPackageJson } from '@main/http/utility';
+import { inspectorFor } from '@main/inspector/InspectorService';
 import { checkForAppUpdate } from '@main/services/infrastructure/AppUpdateChecker';
 import { CodexServiceContext } from '@main/services/infrastructure/CodexServiceContext';
 import { createDefaultCodexDevToolsConfig } from '@main/services/infrastructure/ConfigManager';
@@ -128,6 +129,38 @@ const rpc = BrowserView.defineRPC<CodexDevtoolsRpc>({
           return null;
         }
       },
+      getInspectorSessions: async () => {
+        try {
+          return serviceContext ? await inspectorFor(serviceContext).getInspectorSessions() : [];
+        } catch (error) {
+          logger.error('Error in getInspectorSessions', error);
+          return [];
+        }
+      },
+      getInspectorTrace: async ({ query }) => {
+        try {
+          return serviceContext ? await inspectorFor(serviceContext).getInspectorTrace(query) : null;
+        } catch (error) {
+          logger.error('Error in getInspectorTrace', error);
+          return null;
+        }
+      },
+      getInspectorStats: async ({ query }) => {
+        try {
+          return serviceContext ? await inspectorFor(serviceContext).getInspectorStats(query) : null;
+        } catch (error) {
+          logger.error('Error in getInspectorStats', error);
+          return null;
+        }
+      },
+      getInspectorInstallation: async ({ cwd }) => {
+        try {
+          return serviceContext ? await inspectorFor(serviceContext).getInspectorInstallation({ cwd }) : null;
+        } catch (error) {
+          logger.error('Error in getInspectorInstallation', error);
+          return null;
+        }
+      },
       getAppVersion: async () => {
         try {
           return readVersionFromPackageJson();
@@ -222,6 +255,11 @@ const disposeServices = (): void => {
   }
 
   if (serviceContext) {
+    try {
+      inspectorFor(serviceContext).dispose();
+    } catch {
+      // The inspector may never have been instantiated.
+    }
     serviceContext.dispose();
     serviceContext = null;
   }

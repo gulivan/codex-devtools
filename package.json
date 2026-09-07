@@ -47,6 +47,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "standalone": "pnpm build:renderer && bun run src/main/standalone.ts",
+    "inspector": "pnpm build:renderer && bun run src/main/inspector/serve.ts",
     "clean": "rm -rf dist build .electrobun",
     "prepack": "pnpm build:renderer"
   },

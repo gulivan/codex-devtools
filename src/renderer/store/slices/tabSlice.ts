@@ -7,6 +7,7 @@ import type { AppState, AppTab } from '../types';
 export const DASHBOARD_TAB_ID = 'dashboard';
 export const SETTINGS_TAB_ID = 'settings';
 export const STATS_TAB_ID = 'stats';
+export const INSPECTOR_TAB_ID = 'inspector';
 
 function createSessionTabId(sessionId: string): string {
   return `session:${sessionId}`;
@@ -23,6 +24,7 @@ export interface TabSlice {
   openDashboardTab: () => void;
   openStatsTab: () => void;
   openSettingsTab: () => void;
+  openInspectorTab: () => void;
   setActiveTab: (tabId: string) => void;
   closeTab: (tabId: string) => void;
 }
@@ -67,6 +69,10 @@ export const createTabSlice = (_client: RendererApi): StateCreator<AppState, [],
 
   openSettingsTab: () => {
     set({ activeTabId: SETTINGS_TAB_ID, activeSessionId: null });
+  },
+
+  openInspectorTab: () => {
+    set({ activeTabId: INSPECTOR_TAB_ID, activeSessionId: null });
   },
 
   setActiveTab: (tabId) => {

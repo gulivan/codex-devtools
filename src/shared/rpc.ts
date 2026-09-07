@@ -1,6 +1,14 @@
 import type { CodexDevToolsConfig, CodexFileChangeEvent } from '@main/services/infrastructure';
 import type { CodexParsedSession } from '@main/services/parsing';
 import type {
+  InstallationResult,
+  InspectorSession,
+  StatsQuery,
+  StatsResult,
+  TraceQuery,
+  TraceResult,
+} from '@shared/inspector';
+import type {
   CodexAppUpdateStatus,
   CodexChunk,
   CodexProject,
@@ -55,6 +63,22 @@ export interface CodexDevtoolsRpc {
       checkAppUpdate: {
         params: Record<string, never>;
         response: CodexAppUpdateStatus;
+      };
+      getInspectorSessions: {
+        params: Record<string, never>;
+        response: InspectorSession[];
+      };
+      getInspectorTrace: {
+        params: { query: TraceQuery };
+        response: TraceResult | null;
+      };
+      getInspectorStats: {
+        params: { query: StatsQuery };
+        response: StatsResult | null;
+      };
+      getInspectorInstallation: {
+        params: { cwd?: string };
+        response: InstallationResult | null;
       };
     };
     messages: Record<string, never>;
